@@ -1,0 +1,17 @@
+Alright yall Lightweight Weather & Skies 🌩️
+
+This started with me just wanting some good clouds and apparently i don't know when to leave the sky alone lmao
+
+Clouds that move and morph, storms that travel across the map, forked lightning, anvil crawlers, lightning rolling through the clouds, rain, snow, auroras and meteor showers. A lunar cycle and regional weather too. I wanted a sky that makes you stop and look up.
+
+Works with Battle Art on Gen1Recomp right now. PC and standalone Quest support, with more compatibility to come. You still need the compatible host/bridge—this is the weather mod, not the whole game.
+
+And yes MAKE IT SPICY stayed 😂 Everything for grabbing clips is in Showcase Controls so you don't have to wait around for the perfect storm.
+
+Anime cries aren't bundled but i recommend Dynamic Cries:
+https://github.com/Lockerz102/Stadium-Cries/releases
+
+Big thanks to MrKrisSatan, THCrazy, Bo and everyone whose work and feedback helped this happen. Full credits, previews and setup info here:
+https://github.com/HimioneGranger/Lightweight-Weather-and-Skies
+
+If something looks off send me a clip and tell me what you're running. I wanna see the good weather clips too 👀

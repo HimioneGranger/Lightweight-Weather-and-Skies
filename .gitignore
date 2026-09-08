@@ -1,0 +1,7 @@
+*.apk
+*.idsig
+*.luac
+*.log
+*.bak
+*.mp4
+.DS_Store

@@ -1,0 +1,37 @@
+{
+  "archive": "The_World_v6_70_27_Mini_Ultron_Gen9_TM_TradeStone.zip",
+  "archiveSha256": "CA8E24E07CE071156553CA7D05C55A488EE9974E86A6F6AC9F2EC8A0A3CE767A",
+  "sourceFiles": {
+    "lib/CelestialBodies.lua": "851269A66FAB94D7FECFCCDADE86CC8107034AE1B5A04DA305FDC4A96379B7BE",
+    "lib/CelestialSim.lua": "593B6E7478983CCE7CE59A68523CE33947860A72ED927D8DE8C1CBAA943E13E1",
+    "lib/Constellations.lua": "1BA7E113DE8D5501242AE6A3778D83BCC3C224A4ED7F5AC45612AFBEBD80743C",
+    "lib/NightSky.lua": "20501C676C8C71DB4DFD4FD5EA1CB17BA4EC59DEBD47AA537391D61C4809FF2E",
+    "weather_main.lua": "4ACD8EB2EE9F83E5742FD58091B096E085333DA0A407B7F6C47D44163C7D8054"
+  },
+  "exactFiles": [
+    "lib/CelestialSim.lua",
+    "lib/Constellations.lua"
+  ],
+  "directImports": [
+    "lib/CelestialBodies.lua",
+    "lib/NightSky.lua"
+  ],
+  "exactFunction": "weather_main.lua::wxPaintCelestialDisc -> lib/WorldCelestialDisc.lua",
+  "adaptations": [
+    "L\u00c3\u2013VE built-in VertexColor declaration compatibility",
+    "Exact disc painter into transparent world-space textures; OpenGL ES-safe shader identifiers",
+    "Radial star/planet/constellation point edges per user request",
+    "Draw full 1280-star catalogue and all 5 planets; restore source twinkle, 4 constellations and shooting stars",
+    "Bound mesh draw range and expose celestial draw errors",
+    "Existing Quest clock, smooth host sky, cloud renderer and capped precipitation retained"
+  ],
+  "notInThisSource": [
+    "5120-star catalogue",
+    "25 constellations",
+    "9 planets",
+    "detailed procedural solar surface with sunspots",
+    "lunar phase/earthshine renderer",
+    "eclipse renderer"
+  ],
+  "permission": "Project owner reports permission for a light-performance derivative, initially for Quest and intended for broader compatibility; no general upstream relicensing grant is implied."
+}

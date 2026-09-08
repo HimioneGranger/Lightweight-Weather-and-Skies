@@ -1,0 +1,78 @@
+{
+  "sourceArchive": "The_World_v6_70_27_Mini_Ultron_Gen9_TM_TradeStone.zip",
+  "sourceArchiveSha256": "ca8e24e07ce071156553ca7d05c55a488ee9974e86a6f6ac9f2ec8a0a3ce767a",
+  "assets": [
+    {
+      "file": "assets/sounds/heavy_storm.ogg",
+      "sha256": "fa854a913bf3852824a6b689c62abde376771d892595c08111f007bfcdece14b",
+      "sourceEntry": "assets/sounds/heavy_storm.ogg",
+      "sourceSha256": "fa854a913bf3852824a6b689c62abde376771d892595c08111f007bfcdece14b",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/quest_thunder_clap.ogg",
+      "sha256": "0e6827be5f62942f1ab4972e7682ebf37204b7171b5f57e04eee7a95adbba6e7",
+      "sourceEntry": "assets/sounds/thunder_clap.mp3",
+      "sourceSha256": "51b7b8fe3d2550bd8c1459213c720870e0fa90faf0850f41465d13037b7bfde5",
+      "relationship": "q96 preparation record: 24kHz mono Ogg, ending fade; roll limited to first 14 seconds",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/quest_thunder_roll.ogg",
+      "sha256": "35b5f17b92fd3f578170b3b753e392f291283ee5647ba717ecfe16a52878a28c",
+      "sourceEntry": "assets/sounds/thunder_roll.mp3",
+      "sourceSha256": "2cdc2246c2740da40cb6a5c8984f79fdc4c9ca7dd310766af75ddf9592d03033",
+      "relationship": "q96 preparation record: 24kHz mono Ogg, ending fade; roll limited to first 14 seconds",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/rain.ogg",
+      "sha256": "994afe4ffba84c2c2bbab8080dae8b09e7d9d04fa0b5671033aeca6d1e3ddb14",
+      "sourceEntry": "assets/sounds/rain.ogg",
+      "sourceSha256": "994afe4ffba84c2c2bbab8080dae8b09e7d9d04fa0b5671033aeca6d1e3ddb14",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/rain_heavy.ogg",
+      "sha256": "86eaadeb0b12a1c3e0608c585e7d7691bfc505b5213732fe4c56337007253c9d",
+      "sourceEntry": "assets/sounds/rain_heavy.ogg",
+      "sourceSha256": "86eaadeb0b12a1c3e0608c585e7d7691bfc505b5213732fe4c56337007253c9d",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/storm.ogg",
+      "sha256": "23da5700c48d700f31ab5956b56ac02c0ab5361c8e67f658a1c49d2ea946dfe4",
+      "sourceEntry": "assets/sounds/storm.ogg",
+      "sourceSha256": "23da5700c48d700f31ab5956b56ac02c0ab5361c8e67f658a1c49d2ea946dfe4",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/wind.mp3",
+      "sha256": "2351722d774c15b9e732befdea533dd02d4a1d10bf3987547d4bbc5d84c489f7",
+      "sourceEntry": "assets/sounds/wind.mp3",
+      "sourceSha256": "2351722d774c15b9e732befdea533dd02d4a1d10bf3987547d4bbc5d84c489f7",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    },
+    {
+      "file": "assets/sounds/wind_desert.mp3",
+      "sha256": "7c236d85885ce5375333a070eae240efc2d3603dea0eaa8ba70c796dae38b108",
+      "sourceEntry": "assets/sounds/wind_desert.mp3",
+      "sourceSha256": "7c236d85885ce5375333a070eae240efc2d3603dea0eaa8ba70c796dae38b108",
+      "relationship": "byte-identical",
+      "recordingAuthor": "not separately identified in inspected source archive",
+      "licenseBasis": "user-reported permission for lightweight derivative; no separate recording license located"
+    }
+  ]
+}

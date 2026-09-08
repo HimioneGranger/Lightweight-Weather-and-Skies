@@ -1,0 +1,39 @@
+{
+  "id": "the_world_weather_quest_lite_private",
+  "name": "Lightweight Weather & Skies",
+  "version": "0.1.0-rc.2",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": ">=0.1.37 <2.0.0",
+  "games": [
+    "gen1"
+  ],
+  "priority": 5,
+  "dependencies": [],
+  "optional_dependencies": [
+    "BATTLE_ART_VOXEL_FORK",
+    "DRAMATIC_SHAPE",
+    "DRAMALESS_SHAPE",
+    "potato_voxel",
+    "POTATO_VOXEL",
+    "STADIUM2_OVERWORLD_MODELS"
+  ],
+  "conflicts": [
+    "the_world",
+    "weather_fx"
+  ],
+  "incompatible": [
+    "the_world",
+    "weather_fx"
+  ],
+  "experimental": true,
+  "affects_link": false,
+  "permissions": [
+    "engine_internals"
+  ],
+  "description": "Lightweight clouds, weather and celestial effects. Combined desktop/standalone release candidate; compatible host required. See README for test status.",
+  "gen2compat": true,
+  "credits": "Lightweight derivative of The World by MrKrisSatan, incorporating weather work from releases 6.58.1 and 6.70.27. The project owner reports permission from MrKrisSatan/THCrazy to make a light-performance version, initially for Quest and intended for broader compatibility. This is not an upstream release or a new license grant over upstream material. Audio credits and the bundled lib/voxel_atmos MIT license and notice are retained."
+}
