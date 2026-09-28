@@ -609,6 +609,7 @@ end
 -- The whole per-frame job.  `level` is the ladder rung the engine hands
 -- the pipeline; everything below keys off it, including doing nothing at 0.
 function State.update(dt, level, mapId, indoors)
+  mapId=V.require('OutdoorWeatherAreas').identity(mapId)
   State.indoors = indoors and true or false
   if Settings.worldWeatherEnabled and not Settings.worldWeatherEnabled() then
     State.id="CLEAR"

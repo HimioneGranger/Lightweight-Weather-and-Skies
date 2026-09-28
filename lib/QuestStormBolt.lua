@@ -2,6 +2,7 @@
 -- Mesh regenerated only for a new strike, shared unchanged by both eyes.
 local V=...
 local Bolt={}
+Bolt.SPICY_WIDTH_BOOST=2.25
 local mesh,shader,lastId
 Bolt.SHADER=[[
 varying float ribbonEdge;
@@ -38,7 +39,8 @@ function Bolt.vertices(event)
       for _,axis in ipairs({{1,0},{0,1}})do
         -- Keep the distant core wider than a subpixel at Quest eye resolution.
         local w=index==1 and 1 or .60
-        if event.style=='anvil' then w=w*2.5 end -- retain a visible core at cloud distance
+        if event.style=='anvil' then w=w*4 end -- visible core at cloud distance, no extra vertices
+        if event.verification then w=w*Bolt.SPICY_WIDTH_BOOST end
         w=w*(event.variant and event.variant.width or 1)
         local a=1-.60*(i-1)/math.max(1,#path-1)
         local b=1-.60*i/math.max(1,#path-1)

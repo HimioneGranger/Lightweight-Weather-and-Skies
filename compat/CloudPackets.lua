@@ -45,6 +45,25 @@ function M.new(api,sources,realLove,clock)
   must(api:enqueue{phase='sky_deck',material=self.material,mesh=self.mesh,image=self.image,uniforms=filtered})
  end
  self.clouds=loadSource(sources.clouds,ns,proxy)
+ -- Packet-rendered rain needs a broad cloud bank, but must not alter the
+ -- approved direct Quest cloud source or the actual rain particle budget.
+ function self:ceilingAt(x,z)
+  local sf=self.clouds.stormFrontProvider and self.clouds.stormFrontProvider()
+  local altitude=self.clouds.ALT or 1920
+  if not sf or (sf[4] or 0)<=0 then return altitude end
+  -- Keep authored lightning just below the same moving shelf as the shader.
+  local function smooth(a,b,v)local t=math.max(0,math.min(1,(v-a)/(b-a)));return t*t*(3-2*t)end
+  local dx,dz=(x-sf[1])*sf[3],(z-sf[2])*sf[3]
+  local axis=sf.axis or {1,0}
+  local along=dx*axis[1]+dz*axis[2]
+  local across=(-dx*axis[2]+dz*axis[1])/2.6
+  local edge=along+.05*math.sin(across*7)
+  local leading=1-smooth(.65,1,edge)
+  local lateral=1-smooth(.7,1,math.abs(across))
+  local front=math.max(leading*smooth(-1.4,-.6,along)*lateral*sf[4],sf.canopy or 0)
+  local shelf=leading*smooth(.25,.65,edge)*lateral*sf[4]
+  return altitude-65*front-110*shelf
+ end
  function self:draw(camera,dt,tint,haze)
   self.dayTint=tint;self.haze=haze;self.clouds.update(dt)
   if camera.overhead then assert(self.clouds.draw(camera.eye),'original cloud source declined')end

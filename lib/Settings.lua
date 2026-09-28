@@ -608,7 +608,7 @@ end
 -- True when the player wants the original Weather FX 2D overlays forced.
 -- First-person always overrides: FPV must use 3D weather.
 function Settings.force2dPresent()
-  -- The private Quest build has no valid flat weather path: a post-process
+  -- The standalone Quest adapter has no valid flat weather path: a post-process
   -- becomes paint on the floating Game Boy screen. Its deliberately small 3D
   -- bridge owns overworld presentation instead.
   if V.questLitePrivate then return false end

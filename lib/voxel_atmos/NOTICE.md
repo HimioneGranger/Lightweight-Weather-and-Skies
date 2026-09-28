@@ -1,8 +1,8 @@
 # Third-party code in this folder
 
-`CinematicAtmos.lua`, `DistantWorld.lua`, `HorizonApron.lua` and
-`WeatherSetting.lua` in this folder, and `compat/kanto/dramatic_shape_1_7.lua`,
-are taken **verbatim** from:
+`DistantWorld.lua`, `HorizonApron.lua` and `WeatherSetting.lua` in this folder
+are taken **verbatim** from the project below. `CinematicAtmos.lua` is an
+adaptation of that project's file:
 
 > **Kanto Dynamic Weather** — https://github.com/1-Camp0-1/Kanto-Dynamic-Weather
 > Copyright (c) 2026 1-Camp0-1 ("Campo")
@@ -15,6 +15,7 @@ one condition: the copyright notice and the licence text must travel with the
 copy. That is what this folder is for. If these files are ever moved, edited
 or re-vendored, the licence and this notice go with them.
 
-Nothing here has been modified. Any Weather FX-specific behaviour lives in
-`lib/DramalessAtmos.lua` and `lib/VoxelAtmosBridge.lua`, which are our own
-code and are not covered by the above.
+The MIT copyright and license notice remain with both the verbatim files and
+the adapted `CinematicAtmos.lua`. Other modules in this folder, including
+`WorldPrecip.lua`, are separate project modules; this notice does not describe
+their provenance or license.

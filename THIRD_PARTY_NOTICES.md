@@ -8,9 +8,9 @@ Original archive identity and source hashes are retained in `SOURCE_PROVENANCE.j
 
 ## Replacement weather recordings
 
-The rc.2 ZIP replaces all eight inherited weather recordings with explicitly licensed sounds. See [weather audio credits](assets/sounds/WEATHER_AUDIO_CREDITS.md) and `release-review/AUDIO-SOURCES.json` for authors, licenses, transformations and exact hashes. Gregor Quendel's thunder excerpts use CC BY 4.0; the identified rain and wind files use CC0 1.0.
+The release package replaces all eight inherited weather recordings with explicitly licensed sounds. See [weather audio credits](assets/sounds/WEATHER_AUDIO_CREDITS.md) and `release-review/AUDIO-SOURCES.json` for authors, licenses, transformations and exact hashes. Gregor Quendel's thunder excerpts use CC BY 4.0; the identified rain and wind files use CC0 1.0.
 
-Historical provenance is preserved in `release-review/AUDIO-PROVENANCE.json`: the previous upstream rain/storm loops were credited to the Relic Castle weather tutorial pack and thunder/wind to Pixabay. Their individual licenses were not established; those eight files are not included in rc.2. The release branch starts with a clean root commit. Earlier development history is preserved in a separate local backup, not as release ancestry. This does not grant new rights over the excluded recordings.
+Historical provenance is preserved in `release-review/AUDIO-PROVENANCE.json`: the previous upstream rain/storm loops were credited to the Relic Castle weather tutorial pack and thunder/wind to Pixabay. Their individual licenses were not established; those eight files are not included. The release branch starts with a clean root commit. Earlier development history is preserved in a separate local backup, not as release ancestry. This does not grant new rights over the excluded recordings.
 
 ## Nature recordings
 
@@ -22,8 +22,8 @@ Retain [the component notice](lib/voxel_atmos/NOTICE.md) and [MIT license](lib/v
 
 ## Optional cries
 
-Dynamic Cries is recommended through [Lockerz102's release](https://github.com/Lockerz102/Stadium-Cries/releases). No anime recordings from that pack are included. Its compilation credits include JappaWakka, Lockerz102, therhyswyrill and vMarik*. Follow that pack's own terms and instructions.
+[Stadium Cries by Lockerz102](https://github.com/Lockerz102/Stadium-Cries/releases) is an optional external cry pack; follow that release's own terms and instructions. The previously supplied Dynamic Cries anime recordings are not bundled here. Do not present the linked Stadium Cries release as the same anime pack. Historical compilation credits for the supplied Dynamic Cries material include JappaWakka, Lockerz102, therhyswyrill and vMarik*.
 
 ## Preview images
 
-Cloud/aurora media is project-owner Quest development footage. The three lightning GIFs are captures of the actual effect renderer in an isolated preview scene; they are labeled and are not gameplay or performance proof. Pokémon and other third-party game imagery remains attributable to its respective owners. No ownership over those assets is claimed.
+Cloud/aurora media is project-owner Quest development footage. The approaching-storm, cloud-formation, lunar-cycle, and lightning GIFs are captures of the actual effect renderer in isolated preview scenes; they are labeled and are not gameplay or performance proof. Pokémon and other third-party game imagery remains attributable to its respective owners. No ownership over those assets is claimed.

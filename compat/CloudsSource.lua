@@ -55,8 +55,7 @@ function Clouds.observeMap(map,neighbors) cloudSpace:observe(map,neighbors) end
 Clouds.TEX = 512            -- larger unique field; same world size per texel
 Clouds.PUFF = 20            -- world px per texel: how big a puff is (2 m)
 Clouds.TILE = Clouds.TEX * Clouds.PUFF   -- one repeat of the sheet
-Clouds.ALT = 640            -- the deck's height over the map's ground:
-                            -- 64 m at the headset's life scale (VRRig)
+Clouds.ALT = 1920           -- raised base deck in world pixels, game-wide
 Clouds.DRIFT = 5.0          -- world px per second, along +X
 Clouds.MORPH_PERIOD = 210   -- seconds for one complete, seamless evolution
 Clouds.MORPH_WARP = 1.25 / Clouds.TEX
@@ -74,7 +73,7 @@ function Clouds.deckCoordinate(index)
   local u=(math.abs(p)-core)/core
   return (p<0 and -1 or 1)*(core+u*u*u*(Clouds.HORIZON_EXTENT/2-core))
 end
-Clouds.COVERAGE = 0.36      -- the share of the noise's range that is cloud
+Clouds.COVERAGE = 0.30      -- the share of the noise's range that is cloud
 Clouds.SOFTNESS = 0.28      -- how far into that the cover turns solid
 Clouds.STEPS = 4            -- alpha levels from clear to solid
 Clouds.SEED = 1337
@@ -95,7 +94,11 @@ Clouds.COLOR = { 0.80, 0.85, 0.93 }
 -- feels heavy and relax after it passes instead of snapping between presets.
 -- These are upper bounds, not a second cloud renderer: q89's exact texture,
 -- morph speed, opacity steps, altitude, and draw path remain untouched.
-Clouds.WEATHER_COVERAGE = 0.72
+Clouds.WEATHER_COVERAGE = 0.86
+-- Separate the visible sky coverage of mostly cloudy, light rain and heavy
+-- rain without changing the deck's texture, geometry or particle budget.
+-- Storm remains darker through its independent color/overcast treatment.
+Clouds.RAIN_TARGETS = { RAIN_LIGHT = 0.75, RAIN_HEAVY = 1.0, HEAVY_RAIN = 1.0 }
 Clouds.WEATHER_COLOR = { 0.46, 0.51, 0.61 }
 Clouds.WEATHER_FADE_IN = 5.0
 Clouds.WEATHER_FADE_OUT = 9.0
@@ -401,7 +404,9 @@ local function updateWeather(dt)
   local regional=Clouds.stormFrontProvider and Clouds.stormFrontProvider()~=nil
   if regional then target=0 end -- the spatial shader owns this storm, not global coverage
   if id=='PARTLY_CLOUDY' or id=='PARTLY_SNOW' then target=.30 end
-  if id=='MOSTLY_CLOUDY' then target=.75 end
+  if id=='MOSTLY_CLOUDY' then target=.45 end
+  local rainTarget=Clouds.RAIN_TARGETS[id]
+  if rainTarget and not regional then target=math.max(target,rainTarget) end
   local current = weatherVisuals.intensity
   local seconds = target > current and Clouds.WEATHER_FADE_IN
                                       or Clouds.WEATHER_FADE_OUT
@@ -417,7 +422,12 @@ local function updateWeather(dt)
   -- Independent eased targets: snow is overcast silver-grey, storms charcoal.
   local snowTarget = (type(id)=='string' and id~='PARTLY_SNOW' and id:find('SNOW',1,true)) and 1 or 0
   local stormTarget = id=='STORM' and 1 or 0
-  if recovery then stormTarget=math.max(stormTarget,clamp01(recovery)) end
+  -- The post-storm signal lasts for about a minute. Keep a hint of lingering
+  -- cloud on Clear, without holding its deck near storm coverage throughout.
+  if recovery then
+    local recoveryWeight = (id=='CLEAR' or id=='SUNNY') and 0.15 or 1
+    stormTarget=math.max(stormTarget,clamp01(recovery)*recoveryWeight)
+  end
   if regional then stormTarget=0 end
   local response=1-math.exp(-math.max(0,dt)/9)
   weatherVisuals.snowMix=mix(weatherVisuals.snowMix,snowTarget,response)

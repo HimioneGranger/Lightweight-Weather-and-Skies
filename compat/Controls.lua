@@ -1,6 +1,53 @@
 return function(mod, settings, adapter, worldExports)
 local WEATHER_ROW_ID = "pipeline:weather"
-local DAYTIME_ROW_ID = "BATTLE_ART_VOXEL_FORK:daytime"
+local DAYTIME_ROW_IDS = {
+  ["BATTLE_ART_VOXEL_FORK:daytime"] = true,
+  ["BATTLE_ART_VOXEL_GEN2:daytime"] = true,
+}
+local function isDaytimeRow(id)return DAYTIME_ROW_IDS[id]==true end
+
+local function optionTable(game)
+  if not game then return nil end
+  if game.save and type(game.save.options)=="table" then return game.save.options end
+  if type(game.options)=="table" then return game.options end
+  return nil
+end
+
+local function submenu(id,label,members)
+  return {id=id,label=label,group=true,members=members,
+    value=function()return #members..' CONTROLS'end,
+    activate=function(g)
+      -- Gen2Compat's src.ui.OptionsMenu facade deliberately does not expose
+      -- the private rows constructor.  The old implementation set a Gold
+      -- game on the Gen 1 menu metatable and drew OptionRows directly.  That
+      -- mixed two input contracts, threw while reading game.save/options and
+      -- could leave movement active behind a broken menu.  Build the same
+      -- native page shape Gold's own pushGroup uses instead.
+      if type(g.options)=='table' then
+        local OptionsMenu=require('src.ui.gen2.OptionsMenu')
+        local view={}
+        for i,row in ipairs(members)do view[i]=row end
+        view[#view+1]={id='cancel',label='BACK',cancel=true}
+        local sub=setmetatable({game=g,rows=members,view=view,options=g.options,
+          index=1,scroll=0,sub=true},OptionsMenu)
+        sub.onDone=function(options)
+          g.options=options
+          if g.save then g.save.options=options end
+          if g.applyOptions then pcall(g.applyOptions,g) end
+          if g.persistOptions then pcall(g.persistOptions,g) end
+        end
+        g.stack:push(sub)
+      else
+        local OptionsMenu=require('src.ui.OptionsMenu')
+        -- Gen 1's OptionsMenu.new only accepts onCancel; it rebuilds the
+        -- top-level rows and ignores opts.rows. Use its native screen shape
+        -- directly so this page contains the requested members.
+        g.stack:push(setmetatable({
+          game=g,rows=members,index=1,scroll=0
+        },OptionsMenu))
+      end
+    end}
+end
 
 local function directAtmosphereControls(out, game)
   local weatherRow, daytimeRow
@@ -13,7 +60,7 @@ local function directAtmosphereControls(out, game)
     if id == WEATHER_ROW_ID then
       weatherRow = weatherRow or row
       table.remove(out, i)
-    elseif id == DAYTIME_ROW_ID then
+    elseif isDaytimeRow(id) then
       daytimeRow = daytimeRow or row
       table.remove(out, i)
     end
@@ -63,6 +110,9 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   for i=#out,1,-1 do
     local id=out[i].id or ''
     if id:match('^quest:showcase') or id:match('^quest:lightning:') or id:match('^quest:nature:')
+      or id:match('^quest:regional:') or id:match('^quest:moon:') or id=='quest:lite_weather_fx'
+      or id==mod.id..':stormLightning' or id==mod.id..':stormPace'
+      or id==mod.id..':stormMotion' or id==mod.id..':skyConstellations'
       or id=='quest:storm:front' or id:match('^BATTLE_ART_QUEST_COMPAT:storm')
       or id=='BATTLE_ART_QUEST_COMPAT:skyConstellations' then table.remove(out,i) end
   end
@@ -70,7 +120,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
   local skyRow = settings:constellationsRow()
   local at = #out + 1
   for i, row in ipairs(out) do
-    if row.id == DAYTIME_ROW_ID then at = i + 1 break end
+    if isDaytimeRow(row.id) then at = i + 1 break end
   end
   table.insert(out, at, skyRow)
   for _,row in ipairs(settings:stormRows())do out[#out+1]=row end
@@ -81,30 +131,31 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     local regional=world.lib.require('QuestRegional')
     out[#out+1]={id='quest:regional:enabled',label='REGIONAL WEATHER',
       help='Regional tendencies for AUTO weather and new AUTO storms. Manual weather wins.',
-      value=function(g)return g.save.options.qRegionalWeather==false and 'OFF'or 'ON'end,
-      step=function(g)g.save.options.qRegionalWeather=g.save.options.qRegionalWeather==false;return true end}
+      value=function(g)local o=optionTable(g);return o and o.qRegionalWeather==false and 'OFF'or 'ON'end,
+      step=function(g)local o=optionTable(g);if not o then return false end;o.qRegionalWeather=o.qRegionalWeather==false;return true end}
     out[#out+1]={id='quest:regional:area',label='WEATHER REGION',
       value=function()return regional.profile((world.lib.require('Scene').now or {}).mapId).label end,
       step=function()return false end}
     out[#out+1]={id='quest:nature:audio',label='NATURE AMBIENCE',
       help='Real birds and insects, with slow day/night fades and storm quieting. Also follows WEATHER SFX and SFX volume.',
-      value=function(g)return string.upper((g.save.options.qNatureAudio or 'normal'))end,
+      value=function(g)local o=optionTable(g)or{};return string.upper((o.qNatureAudio or 'normal'))end,
       step=function(g,d)
+        local o=optionTable(g);if not o then return false end
         local choices={'off','low','normal','high'};local at=3
-        for i,v in ipairs(choices)do if v==g.save.options.qNatureAudio then at=i end end
-        g.save.options.qNatureAudio=choices[1+(at-1+(d or 1))%#choices];return true
+        for i,v in ipairs(choices)do if v==o.qNatureAudio then at=i end end
+        o.qNatureAudio=choices[1+(at-1+(d or 1))%#choices];return true
       end}
     out[#out+1]={id='quest:nature:cries',label='RARE LOCAL CRIES',
       help='Occasional local species/earlier evolution calls, anime first and same-species Pokedex fallback. Quiet during storms.',
-      value=function(g)return g.save.options.qNatureCalls==false and 'OFF'or 'ON'end,
-      step=function(g)g.save.options.qNatureCalls=g.save.options.qNatureCalls==false;return true end}
+      value=function(g)local o=optionTable(g);return o and o.qNatureCalls==false and 'OFF'or 'ON'end,
+      step=function(g)local o=optionTable(g);if not o then return false end;o.qNatureCalls=o.qNatureCalls==false;return true end}
     out[#out+1]={id='quest:showcase:nature_cry',label='LOCAL CRY TEST',
-      help='Queue a local cry five seconds after closing both menus. Requires a land encounter table, calm weather, and nature audio ON.',
+      help='Queue a local cry five seconds after closing all menus. Requires a land encounter table, calm weather, and nature audio ON.',
       value=function()return nature.status()end,step=function()return nature.trigger()end}
     local storm=world.lib.require('QuestStorm')
     local front=world.lib.require('QuestStormFront')
     out[#out+1]={id='quest:showcase:approaching_storm',label='APPROACHING STORM',
-      help='Sets WEATHER to STORM and motion MOVING. Close both menus looking toward the desired horizon. Storm arrives with haze and distant lightning; leaves STORM selected. Respects lightning OFF/SOFT.',
+      help='Sets WEATHER to STORM and motion MOVING. Close all menus looking toward the desired horizon. Storm arrives with haze and distant lightning; leaves STORM selected. Respects lightning OFF/SOFT.',
       value=function()return front.status()end,
       step=function(g)
         local scene=world.lib.require('Scene').now or {}
@@ -116,7 +167,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
         settings:_writeOption('stormMotion','moving')
         local pipelines=require('src.render.Pipelines')
         if pipelines.setLevel('weather',level)~=level then return false end
-        if g and g.save and g.save.options then pipelines.syncOptions(g.save.options)end
+        local opts=optionTable(g);if opts then pipelines.syncOptions(opts)end
         state.level=level;state.setWeather('STORM','menu')
         return front.triggerApproach()
       end}
@@ -137,7 +188,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
         if not level then return false end
         local pipelines=require('src.render.Pipelines')
         if pipelines.setLevel('weather',level)~=level then return false end
-        if g and g.save and g.save.options then pipelines.syncOptions(g.save.options)end
+        local opts=optionTable(g);if opts then pipelines.syncOptions(opts)end
         state.level=level;state.setWeather('PARTLY_SNOW','menu')
         return events.trigger('aurora_spicy')
       end}
@@ -150,7 +201,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
       value=function()return world.lib.require('QuestMoon').previewStatus()end,
       step=function()return world.lib.require('QuestMoon').previewNext()end}
     out[#out+1]={id='quest:lightning:spicy',label='LIGHTNING: MAKE IT SPICY',
-      help='Two-minute STORM showcase: forked strikes, anvil crawlers, rolling clouds and distant glows, about 12 seconds apart. Close menu to run; press again to stop. Respects SOFT/OFF. Showcase control.',
+      help='Two-minute verification showcase: high-contrast forked strikes and wide anvil crawlers ahead about every 6 seconds. Close all menus and keep looking forward; press again to stop. Respects SOFT/OFF. Natural lightning is unchanged.',
       value=function()return storm.spicyStatus()end,
       step=function()return storm.triggerSpicy()end}
     for _,variant in ipairs({'anvil','rolling'})do
@@ -177,7 +228,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
           if not clearLevel then return false end
           local pipelines=require('src.render.Pipelines')
           if pipelines.setLevel('weather',clearLevel)~=clearLevel then return false end
-          local opts=g and g.save and g.save.options
+          local opts=optionTable(g)
           if opts then pipelines.syncOptions(opts)end
           state.level=clearLevel
           state.setWeather('CLEAR','menu')
@@ -225,19 +276,20 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
       ['quest:showcase:meteor_spicy']='METEORS SPICY',
     }
     for _,row in ipairs(members)do row.label=labels[row.id] or row.label end
-    out[#out+1]={id='quest:showcase_controls',label='SHOWCASE CONTROLS',
-      group=true,members=members,value=function()return #members..' CONTROLS'end,
-      activate=function(g)
-        -- This engine predates OptionsMenu.new({rows=...}); construct a fixed
-        -- page using its existing input handling without rerunning row hooks.
-        local OptionsMenu=require('src.ui.OptionsMenu')
-        local sub=setmetatable({game=g,rows=members,index=1,scroll=0},OptionsMenu)
-        function sub:draw()
-          require('src.ui.OptionRows').draw(self.game,self.rows,self.index,self.scroll or 0,
-            'BACK',#self.rows+1)
-        end
-        g.stack:push(sub)
-      end}
+    out[#out+1]=submenu('quest:showcase_controls','SHOWCASE CONTROLS',members)
+  end
+  local extras={}
+  for i=#out,1,-1 do
+    local id=out[i].id or ''
+    if id==mod.id..':stormPace' or id==mod.id..':stormMotion'
+      or id==mod.id..':skyConstellations' or id:match('^quest:regional:')
+      or id:match('^quest:nature:') or id:match('^quest:moon:')
+      or id=='quest:showcase_controls' then
+      table.insert(extras,1,table.remove(out,i))
+    end
+  end
+  if #extras>0 then
+    out[#out+1]=submenu('quest:lite_weather_fx','LITE WEATHER FX',extras)
   end
   return out
 end, 1000)

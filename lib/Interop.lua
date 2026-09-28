@@ -28,7 +28,7 @@ local Interop = {}
 -- whole module namespace as `mod.exports.lib` and both ship a DayNight
 -- module, so one probe covers both and any future fork that keeps the
 -- convention.
-Interop.VOXEL_IDS = { "BATTLE_ART_VOXEL_FORK", "DRAMATIC_SHAPE", "DRAMALESS_SHAPE", "STADIUM2_OVERWORLD_MODELS", "potato_voxel", "POTATO_VOXEL" }
+Interop.VOXEL_IDS = { "BATTLE_ART_VOXEL_FORK", "BATTLE_ART_VOXEL_GEN2", "DRAMATIC_SHAPE", "DRAMALESS_SHAPE", "STADIUM2_OVERWORLD_MODELS", "potato_voxel", "POTATO_VOXEL" }
 
 -- ------- mods that render a battle WIDER than the classic 160x144
 --
@@ -42,6 +42,7 @@ Interop.VOXEL_IDS = { "BATTLE_ART_VOXEL_FORK", "DRAMATIC_SHAPE", "DRAMALESS_SHAP
 Interop.WIDE_BATTLE_IDS = {
   "STADIUM_BATTLE_FX",   -- Stadium-style battle cinematics
   "BATTLE_ART_VOXEL_FORK", -- Dramatic Shape 1.9.x battle/voxel fork
+  "BATTLE_ART_VOXEL_GEN2", -- Battle Art port for Gold/Silver/Crystal
   "DRAMATIC_SHAPE",      -- 3D battle arenas
   "DRAMALESS_SHAPE",
   "STADIUM2_OVERWORLD_MODELS",  -- Gen2 Stadium 2 overworld/battle

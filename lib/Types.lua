@@ -402,8 +402,8 @@ Types.list = {
   },
 }
 
--- The private Quest experiment intentionally carries only the effects under
--- test. Filtering the catalogue here also keeps AUTO, config validation, and
+-- The standalone Quest adapter intentionally carries only supported effects.
+-- Filtering the catalogue here also keeps AUTO, config validation, and
 -- the ALWAYS menu on the same small vocabulary instead of merely hiding rows.
 if V.questLitePrivate then
   local keep = {

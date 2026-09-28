@@ -81,6 +81,7 @@ local function questWeatherFrame(frame, id)
     weather.debrisIntensity=0.32*buildup
     local front=V.require('QuestStormFront')
     if front.managed then
+      weather.rainIntensity=weather.rainIntensity*math.max(0,math.min(1,front.coverage or 0))
       weather.debrisIntensity=math.max(weather.debrisIntensity*front.coverage,
         .45*(front.warning or 0))
       weather.windX,weather.windZ=front.windX,front.windZ
@@ -97,7 +98,7 @@ local function questWeatherFrame(frame, id)
 end
 
 local HOSTS = {
-  "BATTLE_ART_VOXEL_FORK", "DRAMATIC_SHAPE", "DRAMALESS_SHAPE",
+  "BATTLE_ART_VOXEL_FORK", "BATTLE_ART_VOXEL_GEN2", "DRAMATIC_SHAPE", "DRAMALESS_SHAPE",
   "potato_voxel", "POTATO_VOXEL", "PotatoVoxel",
   -- Dramatic Shape and its Dramaless fork expose the same exports.lib contract.
   -- Gold/Silver Stadium 2 overworld (Gen2-3D-Sprites) follows that contract too.
@@ -108,6 +109,8 @@ local HOSTS = {
 local WX_TO_KANTO = {
   -- Clear / sun family
   CLEAR = "clear", SUNNY = "clear", HEATWAVE = "clear", HARSH_SUN = "clear",
+  PARTLY_CLOUDY = "partly", MOSTLY_CLOUDY = "mostly",
+  PARTLY_SNOW = "partly",
   -- Rain / storm → closed deck + 3D rain (2D rain suppressed when 3D draws it)
   RAIN_LIGHT = "rain", RAIN_HEAVY = "rain", HEAVY_RAIN = "rain",
   VERDANT_RAIN = "rain", SLEET = "rain",
@@ -140,7 +143,7 @@ local function attachNightSkyHost(NightSky)
   if not (NightSky and Atmos._hostLib) then return end
   local hostLib = Atmos._hostLib
   pcall(function()
-    -- The private Quest build uses Weather FX's 12-minute clock as the only
+    -- The standalone Quest adapter uses the weather system's 12-minute clock as the only
     -- celestial authority. Battle Art's independent DayNight module can be in
     -- a different phase and would otherwise turn stars on during our daytime.
     if V.questLitePrivate then
@@ -349,7 +352,7 @@ local function drawInScene(skyOnly)
   pcall(function() pr, pg, pb, pa = love.graphics.getColor() end)
 
   -- Quest renders celestial objects before the alpha-blended cloud deck.
-  -- Late endScene remains responsible for bolts and precipitation only.
+  -- Gen2 draws the approved deck directly in its live sky pass.
   -- Interiors must not reach the late celestial fallback when the host skips its sky pass.
   if outdoor and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
   -- Sun/Moon first (day + night): same 3D path as stars, independent of nightVis.
@@ -358,7 +361,7 @@ local function drawInScene(skyOnly)
       Atmos._NightSky = V.require("NightSky")
     end
     local NightSky = Atmos._NightSky
-    -- The private Quest path draws CelestialBodies once below. Other hosts use
+    -- The standalone Quest path draws CelestialBodies once below. Other hosts use
     -- NightSky's normal ownership-aware renderer.
     if not V.questLitePrivate and NightSky and NightSky.drawSunMoonWorld then
       pcall(NightSky.drawSunMoonWorld, Voxel3D)
@@ -462,7 +465,42 @@ local function drawInScene(skyOnly)
   end)
 
   end -- celestial portion
+  if skyOnly and V.questLitePrivate
+      and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2" then
+    local cloudOk = celestialPass("gen2-clouds", function()
+      if not Atmos._gen2CloudDeck then
+        Atmos._gen2CloudDeck = V.require('Gen2VoxelClouds').new(Atmos._hostLib, Voxel3D)
+      end
+      assert(Atmos._gen2CloudDeck:draw(map, Atmos._lastNeighbors, outdoor),
+        'original voxel cloud deck declined')
+    end)
+    Atmos._cloudsDrawnThisScene = cloudOk
+  end
   if skyOnly then return end
+  if V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
+      and not Atmos._cloudsDrawnThisScene then
+    celestialPass("gen2-clouds", function()
+      if not Atmos._gen2CloudDeck then
+        Atmos._gen2CloudDeck = V.require('Gen2VoxelClouds').new(Atmos._hostLib, Voxel3D)
+      end
+      assert(Atmos._gen2CloudDeck:draw(map, Atmos._lastNeighbors, outdoor),
+        'original voxel cloud deck declined')
+    end)
+  end
+  -- Stock Gen 1 Battle Art has no Clouds.draw seam. Render the same weather
+  -- deck once in our existing late per-eye pass instead of depending on a
+  -- host modification; depth testing keeps it behind terrain.
+  if V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_FORK"
+      and not Atmos._gen1CloudWrapped and outdoor then
+    celestialPass("gen1-clouds", function()
+      if not Atmos._gen2CloudDeck then
+        Atmos._gen2CloudDeck = V.require("Gen2VoxelClouds").new(
+          Atmos._hostLib, Voxel3D, { depthTest = true })
+      end
+      assert(Atmos._gen2CloudDeck:draw(map, Atmos._lastNeighbors, outdoor),
+        "weather cloud deck declined")
+    end)
+  end
   if V.questLitePrivate then
     celestialPass('storm-bolt',function() V.require('QuestStormBolt').drawWorld(Voxel3D) end)
   end
@@ -526,6 +564,84 @@ local function drawInScene(skyOnly)
   pcall(love.graphics.setDepthMode, "lequal", true)
 end
 
+-- Gen 2 Quest owns its visible background through QuestSky, and its stereo
+-- renderer temporarily replaces Voxel3D.endScene for each eye.  A permanent
+-- endScene wrapper can therefore sit outside the live eye path.  Hook the
+-- actual Sky.paint call instead: it is guaranteed to execute after the eye
+-- canvas and camera are ready, but before terrain.  Clouds/celestials draw
+-- there; the same call arms a one-shot late pass for precipitation and bolts
+-- immediately before that eye closes.
+local function installGen2QuestSkyHook()
+  if not (V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2") then
+    Atmos._gen2HookReason = "not-gen2-quest"
+    return false
+  end
+  local hostLib, Voxel3D = Atmos._hostLib, Atmos._Voxel3D
+  if not (hostLib and Voxel3D) then
+    Atmos._gen2HookReason = "host-lib-unavailable"
+    return false
+  end
+  local okSky, Sky = pcall(hostLib.require, "Sky")
+  if not (okSky and Sky and type(Sky.paint) == "function") then
+    Atmos._gen2HookReason = okSky and "Sky.paint-unavailable"
+      or ("Sky-load-failed:" .. tostring(Sky))
+    return false
+  end
+  if Sky.paint == Atmos._gen2SkyPaint then
+    Atmos._gen2HookReason = "installed"
+    return true
+  end
+
+  local basePaint = Sky.paint
+  local function paint(w, h, sky, horizonY, cell, body, ...)
+    -- Keep Gen2's base sky untouched. The prior billboard fallback added a
+    -- screen-space weather tint/fill that visibly moved with head pitch.
+    local result = basePaint(w, h, sky, horizonY, cell, body, ...)
+    Atmos._skyDrawnThisScene = false
+    Atmos._cloudsDrawnThisScene = false
+    if Atmos._drawing and want3d() then
+      local g = love.graphics
+      g.push("all")
+      local drawn, problem = pcall(drawInScene, true)
+      g.pop()
+      Atmos._skyDrawnThisScene = drawn
+      if not drawn then Atmos._lastDrawError = tostring(problem) end
+    end
+
+    -- Capture the endScene currently installed by StereoRenderer, not the
+    -- dormant function that existed when mods loaded.  This is one-shot per
+    -- eye and StereoRenderer restores its own function after the eye returns.
+    local liveEnd = Voxel3D.endScene
+    if type(liveEnd) == "function" and liveEnd ~= Atmos._gen2LateEnd then
+      local used = false
+      local function lateEnd(...)
+        if not used then
+          used = true
+          local g = love.graphics
+          g.push("all")
+          local drawn, problem = pcall(drawInScene, false)
+          g.pop()
+          if not drawn then Atmos._lastDrawError = tostring(problem) end
+        end
+        return liveEnd(...)
+      end
+      Atmos._gen2LateEnd = lateEnd
+      Voxel3D.endScene = lateEnd
+    end
+    return result
+  end
+
+  Atmos._gen2SkyBase = basePaint
+  Atmos._gen2SkyPaint = paint
+  Sky.paint = paint
+  Atmos._gen2HookReason = "installed"
+  if not Atmos._reportedGen2Hook then
+    Atmos._reportedGen2Hook = true
+    pcall(mod.log.info, mod.log, "Gen2 Quest sky hook installed")
+  end
+  return true
+end
+
 function Atmos.install()
   if mod.exports.ownedWeatherAdapter then Atmos._reason="owned-renderer-api";return false end
   local pc=mod
@@ -546,8 +662,8 @@ function Atmos.install()
   end
   Atmos._hostId = hostId
 
-  -- General hosts keep their own clock. The private Quest study explicitly
-  -- asked for The World's accelerated solar/lunar cycle, so it must remain
+  -- General hosts keep their own clock. The standalone Quest adapter uses
+  -- the accelerated solar/lunar cycle, so it must remain
   -- clock authority and drive both the celestial sphere and Quest sky.
   if not V.questLitePrivate then
     pcall(function()
@@ -697,7 +813,52 @@ function Atmos.install()
     Atmos._wrappedScene = true
   end
 
-  if not Atmos._origEndScene then
+  -- Gen 1 owns the scene seam, but an older bundled cloud recipe must not
+  -- replace the approved weather deck. Keep host mode eligibility intact.
+  if V.questLitePrivate and hostId == "BATTLE_ART_VOXEL_FORK" then
+    local okClouds, hostClouds = pcall(function() return hostLib.require("Clouds") end)
+    if okClouds and hostClouds and type(hostClouds.draw) == "function"
+        and not Atmos._gen1CloudWrapped then
+      local originalDraw = hostClouds.draw
+      hostClouds.draw = function(eye)
+        if not Atmos._drawing then return originalDraw(eye) end
+        local ok, result = pcall(function()
+          if not Atmos._gen2CloudDeck then
+            Atmos._gen2CloudDeck = V.require("Gen2VoxelClouds").new(
+              hostLib, Voxel3D, { depthTest = true })
+          end
+          return Atmos._gen2CloudDeck:draw(Atmos._lastMap,
+            Atmos._lastNeighbors, Atmos._lastOutdoor ~= false)
+        end)
+        if not ok then
+          Atmos._lastDrawError = "gen1-clouds:" .. tostring(result)
+          return false
+        end
+        return result
+      end
+      Atmos._gen1CloudWrapped = true
+    end
+    local okSky, hostSky = pcall(function() return hostLib.require("Sky") end)
+    if okSky and hostSky and not Atmos._gen1BodyWrapped then
+      local originalPaint, originalDisc = hostSky.paint, hostSky.discImage
+      if type(originalPaint) == "function" and type(originalDisc) == "function" then
+        hostSky.paint = function(w, h, sky, horizonY, cell, body, ...)
+          if Atmos._drawing and want3d() then body = nil end
+          return originalPaint(w, h, sky, horizonY, cell, body, ...)
+        end
+        hostSky.discImage = function(...)
+          if Atmos._drawing and want3d() then return nil end
+          return originalDisc(...)
+        end
+        Atmos._gen1BodyWrapped = true
+      end
+    end
+  end
+
+  installGen2QuestSkyHook()
+
+  if not Atmos._origEndScene
+      and not (V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2") then
     Atmos._origEndScene = Voxel3D.endScene
     if V.questLitePrivate then
       Voxel3D.questCelestialBeforeClouds=function()
@@ -843,7 +1004,9 @@ function Atmos.syncFromWeatherFx(state)
   Atmos._wxId = weatherId
   local kanto = WX_TO_KANTO[weatherId] or "clear"
   if weatherId == "CLEAR" or weatherId == "SUNNY" then kanto = "clear" end
-  if cin.weatherSetting and cin.weatherSetting.setValue then
+  if Atmos._hostId == "BATTLE_ART_VOXEL_GEN2" and cin.setQuestWeather then
+    pcall(cin.setQuestWeather, kanto, Atmos._updateDelta or 0)
+  elseif cin.weatherSetting and cin.weatherSetting.setValue then
     pcall(function() cin.weatherSetting:setValue(kanto) end)
   end
   -- Ground snow packs clear when WX leaves snowy weather (all hosts).
@@ -861,6 +1024,13 @@ function Atmos.update(dt)
     -- retry install occasionally if host appeared late
     if not Atmos._active then pcall(Atmos.install) end
     return
+  end
+  -- Sky can appear after the voxel adapter reports ready.  A one-shot install
+  -- during mod loading therefore is not sufficient on Gen 2; retry cheaply
+  -- from the fixed Quest lifecycle until the real Sky.paint is wrapped.
+  if V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
+      and Atmos._gen2HookReason ~= "installed" then
+    installGen2QuestSkyHook()
   end
   -- Keep outdoor flag in sync with Weather FX Scene when available.
   pcall(function()
@@ -882,10 +1052,17 @@ function Atmos.update(dt)
   if Atmos._cin and Atmos._cin.update then
     pcall(Atmos._cin.update, step)
   end
+  if Atmos._gen2CloudDeck then
+    Atmos._gen2CloudDeck:update(step)
+  end
 end
 
 function Atmos.invalidate()
   Atmos._lastPrecipSerial = nil
+  if Atmos._gen2CloudDeck and Atmos._gen2CloudDeck.clouds
+      and Atmos._gen2CloudDeck.clouds.invalidate then
+    pcall(Atmos._gen2CloudDeck.clouds.invalidate)
+  end
   if Atmos._worldPrecip and Atmos._worldPrecip.invalidate then
     pcall(Atmos._worldPrecip.invalidate)
   end

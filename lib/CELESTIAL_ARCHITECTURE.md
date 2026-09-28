@@ -1,4 +1,4 @@
-# Celestial architecture (Weather FX)
+# Celestial architecture
 
 ## Rule
 Camera is the **observer**. It does not own celestial orientation.

@@ -23,7 +23,7 @@ local V = ...
 local Celestial = {}
 local TOD = V.require("TimeOfDay")
 
-local SUN_HALF, MOON_HALF = 22.0, 14.0
+local SUN_HALF, MOON_HALF = 22.0, 10.5
 local SKY_RADIUS = 280  -- closer so FPV look-up clearly sees overhead disc
 
 local function clamp01(x)

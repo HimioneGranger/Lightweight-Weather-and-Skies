@@ -144,7 +144,7 @@ end
 local function saveOptions()
   local ok, opts = pcall(function()
     local Game = require("src.core.Game")
-    return Game and Game.save and Game.save.options or nil
+    return Game and ((Game.save and Game.save.options) or Game.options) or nil
   end)
   if ok then return opts end
   return nil
@@ -238,7 +238,6 @@ local Pokegear = V.questLitePrivate and Lite.Pokegear or V.require("Pokegear")
 local VoxelAtmos = (function()
   local ok, bridge = pcall(V.require, "VoxelAtmosBridge")
   if ok and bridge then
-    pcall(bridge.init)
     return bridge
   end
   return {
@@ -351,7 +350,7 @@ end
 local drewThisFrame = false
 
 -- A full-frame weather pass becomes paint on the floating Game Boy panel in
--- Quest VR. The private build has a deliberately small voxel bridge, so the
+-- Quest VR. The standalone adapter has a deliberately small voxel bridge, so the
 -- overworld compositor must stay clean even if that bridge fails. This makes
 -- rendering failures obvious instead of silently putting rain back on the UI.
 local function questVrWorld()
@@ -444,8 +443,13 @@ mod.content.render_pipelines:register("weather", {
     Draw.update(dt, level)
     -- Drive the optional 3D atmosphere from the same weather state so the
     -- two paths cannot disagree. No-op stub when the bridge is inactive.
-    VoxelAtmos.syncFromWeatherFx(State, Settings)
-    VoxelAtmos.update(dt)
+    -- Desktop and the ordinary Gen 1 host are driven here. The standalone
+    -- Quest bridge is pumped from input.step below because Gen 2 does not
+    -- invoke a level-0 render pipeline's update callback.
+    if not V.questLitePrivate then
+      VoxelAtmos.syncFromWeatherFx(State, Settings)
+      VoxelAtmos.update(dt)
+    end
     Follower.update(dt)
     Tornado.update(dt)
     Audio.update(dt)
@@ -507,6 +511,28 @@ mod.content.render_pipelines:register("weather", {
     VoxelAtmos.invalidate()
   end,
 })
+
+-- Gen 2 can legitimately start with the WEATHER ladder at OFF.  Its pipeline
+-- driver then skips the callback above entirely, which used to prevent the
+-- world-space bridge from ever discovering Battle Art or wrapping Gen 2's
+-- live Sky.paint function.  input.step is the engine's fixed lifecycle seam
+-- on both standalone generations and runs independently of render ladders.
+-- Only the standalone Quest adapter uses this path; weather state/frequencies stay
+-- owned by State.update in the pipeline once the ladder is enabled.
+if V.questLitePrivate then
+  local reportedAtmosReason
+  mod.hooks:wrap("input.step", function(next, game, dt)
+    local result = next(game, dt)
+    VoxelAtmos.syncFromWeatherFx(State, Settings)
+    VoxelAtmos.update(dt)
+    local reason = tostring(VoxelAtmos.reason())
+    if reason ~= reportedAtmosReason then
+      reportedAtmosReason = reason
+      pcall(mod.log.info, mod.log, "Quest world weather bridge: %s", reason)
+    end
+    return result
+  end, -900)
+end
 
 -- Seasonal notices are UI, not weather particles. Drawing them from the HUD
 -- keeps them alive on clear frames where the weather present stage correctly
@@ -909,7 +935,7 @@ mod.events:on("game.ready", function()
     pcall(WeatherCompanionBridge.install)
   end)
 
-  -- The private build uses NightSky.drawWorld and CelestialBodies.drawWorld
+  -- The standalone Quest adapter uses NightSky.drawWorld and CelestialBodies.drawWorld
   -- directly inside DramalessAtmos. The legacy screen-space wrapper allocates
   -- a fresh night palette every eye and paints bodies onto a flat plate, so it
   -- remains disabled in VR.

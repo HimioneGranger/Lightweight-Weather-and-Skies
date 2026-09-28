@@ -112,7 +112,13 @@ function M.new(api,phase,skyDepth)
   end
   function self:camera(c)
     self.eye=copy(c.eye)
+    local viewportHeight=c.viewportHeight
+    if not viewportHeight and love and love.graphics and love.graphics.getHeight then
+      local ok,height=pcall(love.graphics.getHeight)
+      if ok then viewportHeight=height end
+    end
     return {eye=copy(c.eye),focus=copy(c.focus),far=c.far,camera={far=c.far},
+      stableStarBillboards=skyDepth==true,fov=c.fov,viewportHeight=viewportHeight,
       vp={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
       beginEffect=function(s)shader=s;return true end,endEffect=function()shader=nil end}
   end

@@ -115,7 +115,10 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     vec3 n=vec3(p.x,-p.y,sqrt(max(0.0,1.0-dot(p,p))));
     float lit=smoothstep(-0.035,0.08,dot(n,moonLight));
     float face=max(0.0,dot(n,moonLight));
-    texelColor.rgb*=mix(vec3(0.035,0.047,0.075),vec3(0.65+0.35*sqrt(face)),lit);
+    // Keep the unlit face subtle, especially at new moon.
+    float earthshine=0.08*(0.55+0.45*n.z);
+    texelColor.rgb*=mix(vec3(0.055,0.065,0.085),vec3(0.65+0.35*sqrt(face)),lit);
+    texelColor.a*=mix(earthshine,1.0,lit);
   }
   return texelColor;
 }
@@ -198,8 +201,9 @@ function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
       if body and (body.alpha or 0) > 0.02 then
         local axisR,axisU = Disc.axes(body)
         local key = body.kind == "moon" and "moon" or "sun"
-        local half = (key == "moon" and 14 or 22)
-          * (1 + 0.35 * math.max(0, math.min(1, body.dy or 0)))
+        local half = (key == "moon" and 10.5 or 22)
+          * (1 + (key == "moon" and 0.10 or 0.35)
+            * math.max(0, math.min(1, body.dy or 0)))
         local origin = voxel.eye
         local x = origin[1] + body.dx * radius
         local y = origin[2] + body.dy * radius

@@ -1,4 +1,6 @@
 local M={}
+-- One raised base deck for every outdoor map; storm shelves retain their motion.
+function M.cloudHeight(mapId)return 1920 end
 local function must(v,e)assert(v,e);return v end
 function M.new(mod,provider,modules,world,host,isSelected)
  if not(provider and provider.capabilities and provider.capabilities.atmosphere_effects_draft==1)then return nil,'atmosphere API unavailable'end
@@ -28,6 +30,7 @@ function M.new(mod,provider,modules,world,host,isSelected)
   end)
   clouds.clouds.lightningProvider=world.require('QuestStorm').cloudLightning
   clouds.clouds.stormFrontProvider=world.require('QuestStormFront').cloudField
+  world.require('QuestStorm').bindCloudCeiling(function(x,z)return clouds:ceilingAt(x,z)end)
   celestials=modules.CelestialPackets.new(api,modules.CelestialPackets.baker(assert(mod:read('lib/WorldCelestialDisc.lua')),love,world))
  end
  local function tick(frame)
@@ -38,7 +41,7 @@ function M.new(mod,provider,modules,world,host,isSelected)
   local scene=world.require('Scene').now or {}
   if not isSelected()or scene.visible~='world'or not scene.outdoor or scene.indoors then api:clear();return end
   local camera=api:camera()
-  if not(camera and camera.available)then api:clear();self.reason='camera-unavailable';return end
+  if not(camera and camera.available)then api:clear();self.ready=false;self.reason='camera-unavailable: '..tostring(camera and camera.reason or 'no-camera-response');return end
   self.cameraMode=camera.mode
   local dt=math.max(0,math.min(.1,tonumber(frame.dt)or 0))
   local storm=world.require('QuestStorm');storm.bindCamera(camera)
@@ -62,10 +65,20 @@ function M.new(mod,provider,modules,world,host,isSelected)
   if overworld and overworld.map and overworld.map.id==camera.mapId then
    clouds.clouds.observeMap(overworld.map,overworld.neighbors)
   end
+  local safari=({SAFARI_ZONE_CENTER=true,SAFARI_ZONE_EAST=true,SAFARI_ZONE_NORTH=true,SAFARI_ZONE_WEST=true})[camera.mapId]==true
+  local biome=safari or camera.mapId=='VIRIDIAN_FOREST'
+  clouds.clouds.ALT=M.cloudHeight(camera.mapId)
   clouds:draw(camera,dt,tint,haze)
   local strength=math.max(storm.strength,(after.cloud or 0)*.85);local flash=storm.flash()
+  local mul={1-strength*.18,1-strength*.18,1-strength*.18}
+  if biome then
+   local ws=world.require('WeatherState')
+   local dim=math.max(0,(ws.channel('dim') or 0)-flash*.55)
+   local cool=ws.channel('cool') or 0
+   mul={(1-dim*(1+cool*.28))*mul[1],(1-dim*(1+cool*.06))*mul[2],(1-dim*(1-cool*.48))*mul[3]}
+  end
   must(api:submitAtmosphere{sky={dim=strength*.22,flash=flash,replaceCelestials=replace},
-   tint={multiplier={1-strength*.18,1-strength*.18,1-strength*.18},additive={flash*.7,flash*.8,flash}},
+   tint={multiplier=mul,additive={flash*.7,flash*.8,flash}},
    haze={density=(world.require('QuestStormFront').haze or 0)*.00010,color=haze}})
   local game=require('src.core.Game');local map=game.overworld and game.overworld.map
   if surfaceMap~=map then surfaceMap=map;wp.invalidate();surface=world.require('QuestRainSurface').sampler(map,host.require('TileShape'))end
@@ -77,7 +90,13 @@ function M.new(mod,provider,modules,world,host,isSelected)
   self.precipitation=wp.describe();self.active=true;self.ready=true;self.reason='rendering';self.drawnFrames=self.drawnFrames+1
  end
  local err
- handle,err=provider.register{api=1,id=mod.id,priority=120,requires={'world_snapshot','render_phases','atmosphere_effects_draft'},update=tick,invalidate=reset,dispose=reset}
+ local renderCamera=provider.capabilities.atmosphere_render_camera==1
+ local function renderTick(frame)
+  local ok,problem=pcall(tick,frame)
+  if not ok then self.ready=false;self.active=false;self.reason='render-error: '..tostring(problem);error(problem,0)end
+ end
+ if renderCamera then self.reason='awaiting-world-camera' end
+ handle,err=provider.register{api=1,id=mod.id,priority=120,requires={'world_snapshot','render_phases','atmosphere_effects_draft'},update=not renderCamera and tick or nil,prepareAtmosphere=renderCamera and renderTick or nil,invalidate=reset,dispose=reset}
  if not handle then reset();return nil,err end
  function self:detach()if facade then facade:clear()end;reset();if handle then local h=handle;handle=nil;h:dispose()end end
  function self:status()return {ready=self.ready,reason=self.reason,drawnFrames=self.drawnFrames,precipitation=self.precipitation,active=self.active}end

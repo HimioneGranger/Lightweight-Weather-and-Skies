@@ -8,15 +8,23 @@ local zero={0,0,0,0}
 local field={0,0,0,0}
 local axis={1,0};field.axis=axis
 local growth,fill,grownFor=0,0,0
+local clearingAge,clearingStrength=nil,nil
+local CLEARING_SECONDS=66
 F.haze=0
 local function smooth(x)x=math.max(0,math.min(1,x));return x*x*(3-2*x)end
 local function random(a,b)F.seed=(F.seed*48271)%2147483647;return a+(b-a)*(F.seed-1)/2147483646 end
 local function context()
   if F.contextProvider then return F.contextProvider() end
   local s=V.require('Scene').now or {}
-  local ok,g=pcall(require,'src.core.Game')
-  if not ok or not g.data or not g.data.maps or not s.mapId then return nil end
-  return {maps=g.data.maps,mapId=s.mapId,x=s.playerX,z=s.playerZ,outdoor=s.outdoor,
+  -- Gold/Silver owns Game2; the public mod.game handle covers both engines.
+  local g=V.mod and V.mod.game
+  if not (g and g.data and g.data.maps) then
+    local ok,legacy=pcall(require,'src.core.Game')
+    if ok then g=legacy end
+  end
+  if not g or not g.data or not g.data.maps or not s.mapId then return nil end
+  local id,x,z,dx,dz=V.require('OutdoorWeatherAreas').position(g.data.maps,s.mapId,s.playerX,s.playerZ)
+  return {maps=g.data.maps,mapId=id,climateMapId=s.mapId,x=x,z=z,offsetX=dx,offsetZ=dz,outdoor=s.outdoor,
     indoors=s.indoors,visible=s.visible}
 end
 -- Exact Gen1 connection offsets: blocks are32 world pixels. Stable traversal.
@@ -28,14 +36,18 @@ function F.buildGraph(maps,root)
     local def,origin=maps[id],out[id]
     for _,dir in ipairs({'north','south','west','east'})do
       local c=def.connections and def.connections[dir]
-      local dest=c and maps[c.map]
-      if dest and not out[c.map] then
+      -- Gen 1 raw definitions use `map`; Gen 2 raw definitions use `mapId`.
+      -- Runtime Map objects normalize this, but the weather graph deliberately
+      -- reads game.data.maps so it must accept both source schemas itself.
+      local destId=c and (c.mapId or c.map)
+      local dest=type(destId)=='string' and maps[destId] or nil
+      if dest and not out[destId] then
         local x,z=0,0;local offset=(tonumber(c.offset)or 0)*32
         if dir=='north'then x,z=offset,-(dest.height or 0)*32
         elseif dir=='south'then x,z=offset,(def.height or 0)*32
         elseif dir=='west'then x,z=-(dest.width or 0)*32,offset
         else x,z=(def.width or 0)*32,offset end
-        out[c.map]={x=origin.x+x,z=origin.z+z};queue[#queue+1]=c.map
+        out[destId]={x=origin.x+x,z=origin.z+z};queue[#queue+1]=destId
       end
     end
   end
@@ -57,6 +69,7 @@ function F.sample(x,z)
 end
 function F.reset()
   approaching=false
+  clearingAge,clearingStrength=nil,nil
   F.haze=0
   growth,fill,grownFor=0,0,0
   F.cell=nil;F.managed=false;F.coverage=0;F.warning=0;F.windX=nil;F.windZ=nil
@@ -72,7 +85,17 @@ function F.update(dt,state,settings)
   if not ctx then F.managed=false;F.coverage=0;F.haze=0;growth,fill,grownFor=0,0,0;return end
   -- Indoor/menu transitions must not destroy an existing storm. Explicit
   -- weather changes are authoritative when an outdoor map is available.
-  if ctx.outdoor and state.id~='STORM' then F.reset();return end
+  if ctx.outdoor and state.id~='STORM' then
+    -- Clear weather should let the existing bank drift away, not erase its
+    -- spatial field on the same frame that the rain-clearing preview fires.
+    if (state.id~='CLEAR' and state.id~='SUNNY') or not F.cell then F.reset();return end
+    if not clearingAge then
+      clearingAge=0
+      clearingStrength=F.cell.strength
+    end
+  elseif state.id=='STORM' then
+    clearingAge,clearingStrength=nil,nil
+  end
   if not latched and ctx.outdoor and ctx.visible=='world' and state.id=='STORM'
       and type(ctx.x)=='number' and type(ctx.z)=='number' then
     graphRoot=ctx.mapId;graph=F.buildGraph(ctx.maps,graphRoot)
@@ -83,14 +106,18 @@ function F.update(dt,state,settings)
     local life=random(420,660)
     if not approaching and state.LEVEL_IDS and state.LEVEL_IDS[(state.level or 0)+1]=='AUTO'
         and (not state.pinnedBy or state.pinnedBy=='auto')then
-      a,speed,radius,life=V.require('QuestRegional').front(ctx.mapId,a,speed,radius,life)
+      a,speed,radius,life=V.require('QuestRegional').front(ctx.climateMapId or ctx.mapId,a,speed,radius,life)
     end
     F.cell={root=graphRoot,x=ctx.x-math.cos(a)*radius*.55,z=ctx.z-math.sin(a)*radius*.55,
       vx=math.cos(a)*speed,vz=math.sin(a)*speed,radius=radius,age=0,
       life=life,strength=0}
     if approaching then
       local dx,dz=0,-1
-      local found=V.mod.find('BATTLE_ART_VOXEL_FORK')
+      local found
+      if V.mod.exports and V.mod.exports.activeWeatherHost then
+        found=V.mod.exports.activeWeatherHost()
+      end
+      found=found or V.mod.find('BATTLE_ART_VOXEL_FORK') or V.mod.find('BATTLE_ART_VOXEL_GEN2')
       local renderer=found and found.exports and found.exports.lib.require('Voxel3D')
       if renderer and renderer.eye and renderer.focus then
         local x,z=renderer.focus[1]-renderer.eye[1],renderer.focus[3]-renderer.eye[3]
@@ -113,13 +140,20 @@ function F.update(dt,state,settings)
     if not graph then graphRoot=c.root;graph=F.buildGraph(ctx.maps,c.root)end
     -- Menus/connected maps keep advancing; app suspension contributes no dt.
     c.age=c.age+dt;c.x=c.x+c.vx*dt;c.z=c.z+c.vz*dt
-    c.strength=smooth(c.age/45)*(1-smooth((c.age-(c.life-90))/90))
-    if c.age>=c.life then F.cell=nil;c=nil end
+    if clearingAge then
+      clearingAge=clearingAge+dt
+      c.strength=clearingStrength*(1-smooth(clearingAge/CLEARING_SECONDS))
+    else
+      c.strength=smooth(c.age/45)*(1-smooth((c.age-(c.life-90))/90))
+    end
+    if c.age>=c.life or (clearingAge and clearingAge>=CLEARING_SECONDS) then
+      F.reset();return
+    end
   end
   local origin=graph and graph[ctx.mapId]
   F.coverage=0
   if origin then
-    localX,localZ=origin.x,origin.z
+    localX,localZ=origin.x+(ctx.offsetX or 0),origin.z+(ctx.offsetZ or 0)
     if ctx.outdoor and not ctx.indoors and type(ctx.x)=='number' and type(ctx.z)=='number' then
       F.coverage=F.sample(origin.x+ctx.x,origin.z+ctx.z)
       if c then

@@ -114,6 +114,9 @@ Fronts.REGIONS = {
     maps = { "INDIGO", "VICTORY_ROAD", "ROUTE_23", "ROUTE_26" } },
 }
 
+-- Separate persisted climates; exact map selection below avoids prefix capture.
+table.insert(Fronts.REGIONS,{id='VIRIDIAN_FOREST',land='kanto',label='FOREST',at={4,8},maps={'VIRIDIAN_FOREST'},localClimate=true})
+table.insert(Fronts.REGIONS,{id='SAFARI_SAVANNAH',land='kanto',label='SAFARI',at={8,11},maps={'SAFARI_ZONE_CENTER'},localClimate=true})
 Fronts.byId = {}
 for i, r in ipairs(Fronts.REGIONS) do
   r.index = i
@@ -143,14 +146,25 @@ end
 
 local cache = {}
 
+local function mapMatches(id, prefix)
+  if id == prefix then return true end
+  if id:sub(1, #prefix) ~= prefix then return false end
+  -- Match named submaps (PALLET_TOWN, SAFARI_ZONE_EAST) without letting
+  -- ROUTE_1 capture ROUTE_10 or ROUTE_29 capture ROUTE_2.
+  return id:sub(#prefix + 1, #prefix + 1) == "_"
+end
+
 function Fronts.regionFor(mapId)
+  mapId=V.require('OutdoorWeatherAreas').identity(mapId)
+  if mapId=='VIRIDIAN_FOREST' then return Fronts.byId.VIRIDIAN_FOREST end
+  if mapId=='SAFARI_ZONE_CENTER' then return Fronts.byId.SAFARI_SAVANNAH end
   local id = tostring(mapId or "")
   if id == "" then return nil end
   local hit = cache[id]
   if hit ~= nil then return hit or nil end
   for _, region in ipairs(Fronts.REGIONS) do
     for _, prefix in ipairs(region.maps) do
-      if id:find(prefix, 1, true) then
+      if mapMatches(id, prefix) then
         cache[id] = region
         return region
       end
@@ -187,6 +201,9 @@ Fronts.pick = nil          -- set by WeatherState.installFronts
 Fronts.fresh = true
 
 local function rollFor(region, first)
+  if region.localClimate then
+    return (Fronts.pick and Fronts.pick(region.maps[1],nil)) or Types.DEFAULT
+  end
   local picked
   -- DRIFT: a front is twice as likely to inherit a neighbour's weather as
   -- to invent its own.  This is what makes the fronts move across the map

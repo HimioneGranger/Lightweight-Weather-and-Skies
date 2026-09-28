@@ -16,7 +16,11 @@ vec4 effect(vec4 color,Image tex,vec2 tc,vec2 sc){
   vec3 n=vec3(p.x,-p.y,sqrt(max(0.0,1.0-dot(p,p))));
   float lit=smoothstep(-0.035,0.08,dot(n,moonLight));
   float face=max(0.0,dot(n,moonLight));
-  c.rgb*=mix(vec3(0.035,0.047,0.075),vec3(0.65+0.35*sqrt(face)),lit);
+  // The same earthshine and terminator at every phase. Let sky show through
+  // the unlit face instead of stamping an opaque black disc over it.
+  float earthshine=0.30*(0.55+0.45*n.z);
+  c.rgb*=mix(vec3(0.12,0.15,0.21),vec3(0.65+0.35*sqrt(face)),lit);
+  c.a*=mix(earthshine,1.0,lit);
  }
  return c;
 }
@@ -47,9 +51,9 @@ function M.new(api,disc)
         end
         local right,up=disc.axes(body)
         local half=(key=='moon' and 14 or 22)*(1+.35*math.max(0,math.min(1,body.dy or 0)))
-        -- Keep the lunar disc's angular size stable as desktop terrain range changes.
-        -- Retain its sky-layer distance so clouds and terrain still occlude it.
-        if key=='moon' then half=half*radius/420 end
+        -- Keep both bodies' angular sizes stable as desktop terrain range
+        -- changes; retain sky-layer distance for terrain/cloud occlusion.
+        half=half*radius/420
         local function vertex(x,y,u,v)return {body.dx*radius+half*(right[1]*x+up[1]*y),
           body.dy*radius+half*(right[2]*x+up[2]*y),body.dz*radius+half*(right[3]*x+up[3]*y),u,v}end
         local a,b,c,d=vertex(-1,1,0,0),vertex(1,1,1,0),vertex(1,-1,1,1),vertex(-1,-1,0,1)

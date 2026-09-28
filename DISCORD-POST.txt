@@ -1,17 +1,16 @@
-Alright yall Lightweight Weather & Skies 🌩️
+Alright yall, Lightweight Weather & Skies 1.0 is here 🌩️
 
-This started with me just wanting some good clouds and apparently i don't know when to leave the sky alone lmao
+I started this because I wanted clouds worth looking up at and apparently I don't know when to leave the sky alone lmao. They move and morph, storms roll across the map, and there's rain, snow, forked lightning, anvil crawlers, thunder, day/night skies, moon phases, auroras, meteors and regional weather. The world sounds different too.
 
-Clouds that move and morph, storms that travel across the map, forked lightning, anvil crawlers, lightning rolling through the clouds, rain, snow, auroras and meteor showers. A lunar cycle and regional weather too. I wanted a sky that makes you stop and look up.
+I made it to make VR, first-person and third-person play feel more immersive—the weather should feel like it's happening around you, not just pasted over the screen.
 
-Works with Battle Art on Gen1Recomp right now. PC and standalone Quest support, with more compatibility to come. You still need the compatible host/bridge—this is the weather mod, not the whole game.
+This is the first release. Gen 1 with Battle Art is the main track on PC and standalone Quest. Gen 2 on Quest is beta and non-VR Android is alpha, so send me clips if something acts up. It's one weather ZIP; Battle Art and the Quest bridge are separate installs. Back up your save and don't run another weather mod alongside it.
 
-And yes MAKE IT SPICY stayed 😂 Everything for grabbing clips is in Showcase Controls so you don't have to wait around for the perfect storm.
+Showcase Controls stayed. If you see MAKE IT SPICY, give the pepper a chance 🌶️😂
 
-Anime cries aren't bundled but i recommend Dynamic Cries:
-https://github.com/Lockerz102/Stadium-Cries/releases
+If you're making a voxel mod and want compatibility, reach out. I'm happy to work with anyone on it.
 
-Big thanks to MrKrisSatan, THCrazy, Bo and everyone whose work and feedback helped this happen. Full credits, previews and setup info here:
-https://github.com/HimioneGranger/Lightweight-Weather-and-Skies
+Huge thanks to MrKrisSatan, THCrazy, Bo and everyone who helped or tested. Credits, GIFs, setup and the download are here:
+https://github.com/HimioneGranger/Lightweight-Weather-and-Skies/releases/tag/v1.0.0
 
-If something looks off send me a clip and tell me what you're running. I wanna see the good weather clips too 👀
+And yes, I want your weather clips 👀

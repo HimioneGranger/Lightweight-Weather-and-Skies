@@ -441,6 +441,31 @@ local function billboardAxes(Voxel3D)
   return { rx, ry, rz }, { ux / ul, uy / ul, uz / ul }
 end
 
+-- Packet skies may be drawn with a newer camera than the snapshot used to
+-- build their mesh. Face each fixed star along its own sky direction, so
+-- turning the camera cannot rotate a quad edge-on before packet rendering.
+local function skyTangentAxes(dx,dy,dz)
+  local len=math.sqrt(dx*dx+dz*dz)
+  local rx,rz=1,0
+  if len>1e-6 then rx,rz=-dz/len,dx/len end
+  return {rx,0,rz},{dy*rz,dz*rx-dx*rz,-dy*rx}
+end
+NightSky.skyTangentAxes=skyTangentAxes
+
+-- A packet sky uses a multi-kilounit far plane. Unscaled star quads become
+-- subpixel there and wink out as their centers cross the pixel grid.
+local function packetStarHalf(base, radius, camera)
+  if not camera.stableStarBillboards then return base end
+  local half = base * radius / SKY_RADIUS * 0.75
+  local fov, height = tonumber(camera.fov), tonumber(camera.viewportHeight)
+  if fov and fov > 0 and fov < math.pi and height and height > 0 then
+    local worldPerPixel = 2 * radius * math.tan(fov * 0.5) / height
+    half = math.max(half, worldPerPixel * 1.1)
+  end
+  return half
+end
+NightSky.packetStarHalf=packetStarHalf
+
 local VERT_POOL = {}
 local function vertAt(i)
   local v = VERT_POOL[i]
@@ -692,15 +717,11 @@ function NightSky.drawWorld(Voxel3D, time)
         if NightSky.DEBUG and i == 1 then
           a = math.max(a, 0.85 * fade)
         end
-        local half = math.max(0.5, s.size * 0.55) * desktopSize
-        if desktopProfile then
+        local half = packetStarHalf(math.max(0.5, s.size * 0.55) * desktopSize, radius, Voxel3D)
+        if desktopProfile or Voxel3D.stableStarBillboards then
           -- Tangent to the celestial sphere: independent of the captured
           -- camera's yaw/pitch, which can precede the rendered camera frame.
-          local len=math.sqrt(sdx*sdx+sdz*sdz)
-          local rx,rz=1,0
-          if len>1e-6 then rx,rz=-sdz/len,sdx/len end
-          local right={rx,0,rz}
-          local up={-sdy*rz,sdz*rx-sdx*rz,sdy*rx}
+          local right,up=skyTangentAxes(sdx,sdy,sdz)
           n=pushQuad(verts,n,cx,cy,cz,half,right,up,s.r,s.g,s.b,a)
         else
           n = pushQuad(verts, n, cx, cy, cz, half, axisR, axisU, s.r, s.g, s.b, a)
@@ -719,9 +740,14 @@ function NightSky.drawWorld(Voxel3D, time)
       local cy = e[2] + pdy * radius
       local cz = e[3] + pdz * radius
       local pa = p.a * scale * fade
-      n = pushQuad(verts, n, cx, cy, cz, p.size * 0.55, axisR, axisU, p.r, p.g, p.b, pa)
+      local right,up=axisR,axisU
+      if Voxel3D.stableStarBillboards then
+        right,up=skyTangentAxes(pdx,pdy,pdz)
+      end
+      local half=packetStarHalf(p.size * 0.55, radius, Voxel3D)
+      n = pushQuad(verts, n, cx, cy, cz, half, right, up, p.r, p.g, p.b, pa)
       if (lod.starStep or 1) <= 2 then
-        n = pushQuad(verts, n, cx, cy, cz, p.size * 0.22, axisR, axisU, 1, 1, 1, pa * 0.5)
+        n = pushQuad(verts, n, cx, cy, cz, half * 0.4, right, up, 1, 1, 1, pa * 0.5)
       end
     end
   end

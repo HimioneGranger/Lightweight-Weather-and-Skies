@@ -61,11 +61,10 @@
 --    the renderer. Every flake drew as the same axis-aligned soft blob. The
 --    billboard basis is rotated now, so flakes tumble.
 --
--- What is deliberately NOT changed: every rain constant, rain's spawn function,
--- rain's integration and rain's streak geometry are the original values and the
--- original math. The rain look is a known-good reference and the brief was
--- explicit. Rain only gains the shared allocation-free buffer, which changes
--- cost, not appearance. The cloud bank lives in CinematicAtmos.drawClouds and
+-- The original spawn distribution, particle cap, and streak geometry remain.
+-- All renderers apply the weather profile's rainSpeed to vertical travel
+-- after the user reported slow rainfall.
+-- The cloud bank lives in CinematicAtmos.drawClouds and
 -- is not touched here; snow's spawn ceiling only *reads* a deck height so
 -- flakes fall out of the bank instead of out of a fixed slab.
 -- ============================================================================
@@ -100,7 +99,7 @@ local TILE = 16
 -- is derived from the rendered area (see SNOW_PER_TILE) and clamped here.
 local SNOW_MAX = 9000
 
--- Private Quest contract: these are hard ceilings, not merely quality
+-- Standalone Quest contract: these are hard ceilings, not merely quality
 -- suggestions. The 2D particle budgets and the true 3D pools now agree.
 if V.questLitePrivate then
   RAIN_MAX = 90
@@ -391,7 +390,8 @@ end
 -- SPAWNERS
 -- ---------------------------------------------------------------------------
 
--- RAIN — unchanged from the shipped version. Do not retune here.
+-- RAIN — original spawn distribution and shape; fall speed is applied
+-- during integration below, not baked into these per-drop velocities.
 -- Spawn one particle in the volume around player (full 360 degrees, not view cone).
 local function spawnRainAt(i, px, py, pz, intensity, windX, windZ)
   -- Independent world spawn — 20 spread depth layers around the player (360).
@@ -652,7 +652,7 @@ function WP.update(dt, focus, weather)
 
   local wantRain = 0
   if rainI > 0.02 then
-    -- Storm-only density increase. Keep original per-drop speed/size/opacity.
+    -- Storm-only density increase. Keep original per-drop size/opacity.
     local rainBudget=RAIN_MAX
     if V.questLitePrivate and weather and weather.wxId=='STORM' then rainBudget=120 end
     local budgetKey = weather and weather.wxId == 'STORM' and 'stormRainMax' or 'rainMax'
@@ -682,10 +682,14 @@ function WP.update(dt, focus, weather)
   ensureRain(wantRain)
   ensureSnow(wantSnow)
 
-  -- ---- RAIN (integration identical to the shipped version) ----------------
+  -- ---- RAIN ---------------------------------------------------------------
   local rx, ry, rz = rain.x, rain.y, rain.z
   local rvx, rvy, rvz = rain.vx, rain.vy, rain.vz
   local rlife, rmax, rseed = rain.life, rain.maxLife, rain.seed
+  -- Weather profiles already select rainSpeed. A stronger vertical baseline
+  -- keeps ordinary rain visibly moving and preserves each storm profile's
+  -- relative pace. This changes no particle budgets or draw geometry.
+  local fallScale = 1.50 * max(0.5, min(1.5, tonumber(weather and weather.rainSpeed) or 1.0))
   for i = 1, wantRain do
     if rx[i] == 0 and ry[i] == 0 and rz[i] == 0 and rlife[i] == 0 then
       spawnRainAt(i, px, py, pz, rainI, windX, windZ)
@@ -693,7 +697,7 @@ function WP.update(dt, focus, weather)
     rlife[i] = rlife[i] + dt
     -- Integrate independent velocity (world axes only)
     rx[i] = rx[i] + rvx[i] * dt
-    ry[i] = ry[i] + rvy[i] * dt
+    ry[i] = ry[i] + rvy[i] * dt * fallScale
     rz[i] = rz[i] + rvz[i] * dt
     -- Mild gravity reinforcement (per-drop variation already in vy)
     rvy[i] = rvy[i] - (18 + (rseed[i] or 0) * 8) * dt

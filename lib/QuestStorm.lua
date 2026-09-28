@@ -7,8 +7,11 @@ local remaining,active,queued,ready,wasEligible,lastMap=nil,nil,nil,nil,false,ni
 local testRequested,lastTest,weatherEligible=false,-math.huge,false
 local host,voxel,originalTint,originalProvider
 local originalCloudLightning
+local originalCloudAltitude
 local originalStormFront
 local originalWeatherHaze
+local cloudCeiling
+function Storm.bindCloudCeiling(provider)cloudCeiling=provider end
 -- Independent RNG preserves the tested nearby-strike cadence/geometry.
 local distantSeed=math.max(1,(os.time()+7919)%2147483647)
 local distant,distantQueued,distantReady,distantWait,distantTest=nil,nil,nil,nil,false
@@ -58,7 +61,7 @@ local function distantRandom(a,b)
 end
 local function nextDistant(pace)
   local r=distantGaps[pace]or distantGaps.calm
-  return distantRandom(r[1],r[2])
+  return distantRandom(r[1],r[2])/1.5
 end
 local function distantStrike(preview)
   local eye=voxel and voxel.eye or {0,32,0}
@@ -76,7 +79,7 @@ local function distantStrike(preview)
     distant.light[1],distant.light[2]=front.constrain(distant.light[1],distant.light[2])
     if front.cell then distant.radius=math.min(distant.radius,front.cell.radius*.35)end
   end
-  distantQueued={due=Storm.clock+distantRandom(6,9),gain=distantRandom(.10,.18),
+  distantQueued={due=Storm.clock+distantRandom(4,6),gain=distantRandom(.16,.24),
     sound='quest_thunder_roll',pitch=distantRandom(.82,.93),distant=true}
 end
 function Storm.cloudLightning() return distant and distant.light or active and active.cloudLight or nil end
@@ -92,7 +95,7 @@ function Storm.preferences()
 end
 local function gap(pace)
   local range=Storm.GAPS[pace] or Storm.GAPS.calm
-  return random(range[1],range[2])
+  return random(range[1],range[2])/1.5
 end
 function Storm.reset()
   remaining,active,queued,ready,wasEligible,lastMap=nil,nil,nil,nil,false,nil
@@ -113,20 +116,28 @@ local function displace(points,a,b,spread,depth)
   displace(points,a,mid,spread*.55,depth-1)
   displace(points,mid,b,spread*.55,depth-1)
 end
-local function strike(mode,preview,style)
+local function strike(mode,preview,style,verification)
   lastNear=Storm.clock
   local eye=voxel and voxel.eye or {0,32,0}
   local far=voxel and (voxel.far or (voxel.camera and voxel.camera.far)) or 1600
-  local distance=random(math.min(280,far*.35),math.min(440,far*.58))
+  local cloudY=host and host.clouds and host.clouds.ALT or 1920
+  local cloudOnly=random(0,1)<0.50
+  if preview then cloudOnly=false end
+  -- A ground strike beginning at the raised cloud deck is almost entirely
+  -- above the eye when only 280-440 units away. Place the full-height bolt
+  -- out toward the storm horizon instead. Cloud crawlers keep their existing
+  -- world placement; the total natural lightning cadence is unchanged.
+  local distance=cloudOnly
+    and random(math.min(280,far*.35),math.min(440,far*.58))
+    or random(2100,2500)
   local az=random(0,math.pi*2)
-  if preview and voxel and voxel.focus then
-    -- Capture heading once; the resulting bolt never follows head rotation.
+  if not cloudOnly and voxel and voxel.focus and (preview or random(0,1)<.70) then
+    -- Favor the viewed storm without pinning the event to the head: heading
+    -- and world points are captured once, and some natural bolts stay distant.
     az=math.atan2(voxel.focus[1]-eye[1],voxel.focus[3]-eye[3])
+      + (preview and 0 or random(-.75,.75))
   end
   local x,z=eye[1]+math.sin(az)*distance,eye[3]+math.cos(az)*distance
-  local cloudY=host and host.clouds and host.clouds.ALT or 640
-  local cloudOnly=random(0,1)<0.65
-  if preview then cloudOnly=false end
   local top={x+random(-70,70),cloudY,z+random(-50,50)}
   local hit={x,cloudOnly and cloudY-random(70,150) or 0,z}
   local points={top}
@@ -138,7 +149,8 @@ local function strike(mode,preview,style)
   end
   Storm.serial=Storm.serial+1
   active={id=Storm.serial,age=0,mode=mode,points=points,fork=fork,
-    distance=distance,cloudOnly=cloudOnly,boltAlpha=0,origin={eye[1],eye[2],eye[3]}}
+    distance=distance,cloudOnly=cloudOnly,boltAlpha=0,origin={eye[1],eye[2],eye[3]},
+    verification=verification==true}
   active.style=style=='anvil' and 'anvil' or style=='rolling' and 'rolling'
     or (not preview and cloudOnly and (Storm.serial%2==0 and 'anvil' or 'rolling')) or 'forked'
   local variant=nextVariant(active.style)
@@ -211,8 +223,25 @@ local function strike(mode,preview,style)
       if front.cell then active.cloudRadius=math.min(active.cloudRadius,front.cell.radius*.35)end
     end
   end
-  queued={due=Storm.clock+2+3*(distance/math.max(1,math.min(440,far*.58))),
-    gain=random(.30,.48)*(cloudOnly and .80 or 1),
+  -- Lower authored paths with the rendered storm shelf so crawlers remain visible.
+  if cloudCeiling then
+    local paths={active.points,active.fork or {}}
+    for _,branch in ipairs(active.branches or {})do paths[#paths+1]=branch end
+    local adjusted={}
+    for _,path in ipairs(paths)do for _,p in ipairs(path)do
+      if not adjusted[p] then
+        adjusted[p]=true
+        local ceiling=cloudCeiling(p[1],p[3])
+        local weight=active.style=='forked' and math.max(0,math.min(1,p[2]/cloudY)) or 1
+        p[2]=p[2]+(ceiling-cloudY)*weight
+      end
+    end end
+  end
+  -- The flash is brief; keep its clap close enough in time to read as the
+  -- same event. Far-off cloud flashes retain a noticeably later rumble.
+  queued={due=Storm.clock+(cloudOnly and random(1.3,2.2)
+    or random(.7,1.4)),
+    gain=random(.42,.58)*(cloudOnly and .85 or 1),
     sound=cloudOnly and 'quest_thunder_roll' or 'quest_thunder_clap',pitch=random(.94,1.03)}
 end
 -- User-requested showcase controls, retained for recording and previews.
@@ -220,7 +249,7 @@ function Storm.testStatus(kind)
   if spicy then return 'SPICY ACTIVE' end
   local scene=V.require('Scene').now or {}
   if not scene.outdoor or scene.indoors then return 'OUTDOORS ONLY' end
-  if not weatherEligible then return 'STORM ONLY' end
+  if not weatherEligible then return 'RAIN OR STORM ONLY' end
   if Storm.preferences().mode=='off' then return 'LIGHTNING OFF' end
   if (kind=='cloud' and distantTest) or (kind~='cloud' and testRequested) then return 'QUEUED - CLOSE MENU' end
   if distantTest or testRequested or distant or distantQueued or distantReady then return 'WAIT' end
@@ -255,19 +284,26 @@ function Storm.update(dt,state,settings)
   Storm.clock=Storm.clock+dt
   local scene=V.require('Scene').now or {}
   local pref=Storm.preferences()
-  local weather=state and state.id=='STORM' and (tonumber(state.level)or 0)>0
+  local definition=state and state.current and state.current()
+  local rainy=definition and definition.ch and (tonumber(definition.ch.rain)or 0)>0
+  local isStorm=state and state.id=='STORM'
+  local weather=state and (isStorm or rainy) and (tonumber(state.level)or 0)>0
     and (not settings.worldWeatherEnabled or settings.worldWeatherEnabled())
+  local weatherMapId=V.require('OutdoorWeatherAreas').identity(scene.mapId)
+  local cadence=V.require('QuestRegional').lightningRate(scene.mapId,state and state.id)
+  Storm.cadenceMultiplier=cadence
   local outdoors=scene.outdoor==true and not scene.indoors and scene.visible=='world'
   local front=V.require('QuestStormFront')
-  local coverage=front.managed and front.coverage or 1
+  local coverage=isStorm and front.managed and front.coverage or 1
   weatherEligible=weather and coverage>.25 and scene.outdoor==true and not scene.indoors
-  local target=weather and coverage or 0
+  local target=weather and isStorm and coverage or 0
+  local lightStrength=weather and math.max(Storm.strength,isStorm and 0 or .65) or 0
   Storm.strength=Storm.strength+(target-Storm.strength)*(1-math.exp(-dt/(weather and 9 or 14)))
   if not weather and Storm.strength<.0001 then Storm.strength=0 end
   local nearAllowed=coverage>.25
   local approaching=front.managed and front.cell and (front.warning or 0)>.01
   local eligible=weather and (nearAllowed or approaching) and outdoors and pref.mode~='off'
-  if not eligible or (lastMap and lastMap~=scene.mapId) then
+  if not eligible or (lastMap and lastMap~=weatherMapId) then
     distant,distantQueued,distantReady,distantWait=nil,nil,nil,nil
     active,queued,ready=nil,nil,nil
     Storm.flashValue=0
@@ -275,13 +311,13 @@ function Storm.update(dt,state,settings)
     remaining=nil
     -- Preserve a menu-requested test until the world is visible, but never
     -- carry it into another map, indoors, clear weather, or lightning OFF.
-    if not weatherEligible or pref.mode=='off' or (lastMap and lastMap~=scene.mapId) then
+    if not weatherEligible or pref.mode=='off' or (lastMap and lastMap~=weatherMapId) then
       testRequested=false
       distantTest=false
       spicy=nil
     end
   end
-  lastMap=scene.mapId
+  lastMap=weatherMapId
   if not eligible then return end
   if not wasEligible then remaining=gap(pref.pace);wasEligible=true end
   -- A newly selected pace starts a fresh wait in that pace's advertised range.
@@ -290,21 +326,23 @@ function Storm.update(dt,state,settings)
   if approaching and front.cell.showcaseApproach and not front.cell.showcaseFlashQueued then
     distantWait=5;front.cell.showcaseFlashQueued=true
   end
-  remaining=math.max(0,(remaining or 0)-dt)
-  if not nearAllowed then remaining=math.max(remaining,12) end
+  remaining=math.max(0,(remaining or 0)-dt*cadence)
+  if not nearAllowed then remaining=math.max(remaining,12/1.5) end
   if spicy then
     spicy.left=spicy.left-dt;spicy.wait=spicy.wait-dt
     remaining=math.max(remaining,12)
     if spicy.left<=0 then spicy=nil;remaining=gap(pref.pace)
     elseif spicy.wait<=0 and not active and not queued and not ready
         and not distant and not distantQueued and not distantReady then
-      local styles={'forked','anvil','rolling','cloud'}
+      -- A deliberately obvious diagnostic: every event is locatable geometry
+      -- captured ahead of the view; separate controls cover cloud-only styles.
+      local styles={'forked','anvil','forked','anvil'}
       spicy.index=spicy.index%4+1
       local style=styles[spicy.index]
       local savedSeed,savedDistant=Storm.seed,distantSeed
-      if style=='cloud' then distantStrike(true) else strike(pref.mode,true,style) end
+      strike(pref.mode,true,style,true)
       Storm.seed,distantSeed=savedSeed,savedDistant
-      spicy.wait=12
+      spicy.wait=6
     end
   elseif distantTest then
     distantStrike(true);distantTest=false
@@ -319,16 +357,19 @@ function Storm.update(dt,state,settings)
     local mode=pref.mode
     local variant=active.variant
     local visualAge=active.age*Storm.FLASH_SPEED
+    local verification=active.verification==true
     local life=(active.style=='rolling' and 2.6 or active.style=='anvil' and 1.7
-      or mode=='soft' and 1.8 or .85)*variant.fade
+      or mode=='soft' and 1.8 or .85)*variant.fade*(verification and 1.40 or 1)
     if visualAge>=life then active=nil
     else
       local f=math.sin(math.pi*visualAge/life)^2
-      Storm.flashValue=f*(mode=='soft' and .12 or .24)*Storm.strength
+      local flashBoost=verification and 3.50 or 1
+      Storm.flashValue=math.min(1,f*(mode=='soft' and .12 or .24)*lightStrength*flashBoost)
       -- Fast luminous core, then a single smooth decay: no repeated strobe.
       local rise=math.min(1,visualAge/(.045*variant.fade))
       local fade=math.max(0,1-math.max(0,visualAge-.045*variant.fade)/(.52*variant.dispersion))
-      active.boltAlpha=mode=='full' and rise*rise*(3-2*rise)*fade*fade or 0
+      active.boltAlpha=mode=='full' and math.min(1,
+        rise*rise*(3-2*rise)*fade*fade*(verification and 1.35 or 1)) or 0
       active.reveal=1
       if active.style~='forked' then
         local progress=math.min(1,visualAge/((active.style=='rolling' and 2.3 or 1.05)*variant.dispersion))
@@ -341,20 +382,24 @@ function Storm.update(dt,state,settings)
         active.cloudLight[2]=path[index][3]+(path[index+1][3]-path[index][3])*u
         local spread=progress*progress*(3-2*progress)
         active.cloudLight[3]=1/(active.cloudRadius*(.65+.65*spread))
-        active.cloudLight[4]=f*(mode=='soft' and .09 or .20)*Storm.strength
-        Storm.flashValue=active.style=='anvil' and Storm.flashValue*.35 or 0
-        active.boltAlpha=mode=='full' and active.style=='anvil' and f*.85 or 0
+        active.cloudLight[4]=math.min(1,f*(mode=='soft' and .09 or .20)*lightStrength
+          *(verification and 2 or 1))
+        Storm.flashValue=active.style=='anvil'
+          and Storm.flashValue*(verification and .65 or .35) or 0
+        active.boltAlpha=mode=='full' and active.style=='anvil'
+          and math.min(1,f*(verification and 1.15 or .85)) or 0
       else
         active.cloudLight[3]=1/(650+350*math.min(1,visualAge/life))
-        active.cloudLight[4]=f*(mode=='soft' and .065 or .16)*Storm.strength
+        active.cloudLight[4]=math.min(1,f*(mode=='soft' and .065 or .16)*lightStrength
+          *(verification and 2 or 1))
       end
     end
   end
   if queued and Storm.clock>=queued.due then ready=queued;queued=nil end
   -- Leave nearby strike + thunder space untouched; distant events use only
   -- a quiet gap with enough room for their delayed roll to arrive first.
-  distantWait=math.max(0,(distantWait or nextDistant(pref.pace))-dt)
-  if not spicy and distantWait<=0 and remaining>11 and Storm.clock-lastNear>6
+  distantWait=math.max(0,(distantWait or nextDistant(pref.pace))-dt*cadence)
+  if not spicy and distantWait<=0 and remaining>11/1.5 and Storm.clock-lastNear>6/1.5
       and not active and not queued and not ready
       and not distant and not distantQueued and not distantReady then
     distantStrike(false);distantWait=nextDistant(pref.pace)
@@ -368,7 +413,7 @@ function Storm.update(dt,state,settings)
       local spread=math.min(1,visualAge/(life*distant.variant.dispersion))
       distant.light[3]=1/(distant.radius*(.65+.65*spread*spread*(3-2*spread)))
       distant.light[4]=math.sin(math.pi*visualAge/life)^2
-        *(pref.mode=='soft' and .07 or .14)*math.max(Storm.strength,
+        *(pref.mode=='soft' and .07 or .14)*math.max(lightStrength,
           approaching and (front.cell.strength or 0)*math.min(1,(front.warning or 0)*2) or 0)
     end
   end
@@ -405,8 +450,17 @@ function Storm.bindCamera(worldVoxel) voxel=worldVoxel end
 function Storm.attach(hostLib,worldVoxel)
   voxel=worldVoxel
   if host then return end
-  local dn,sky,clouds=hostLib.require('DayNight'),hostLib.require('Sky'),hostLib.require('Clouds')
+  local dn,sky=hostLib.require('DayNight'),hostLib.require('Sky')
+  -- Gen 2's Battle Art host has no Clouds.lua: Weather FX draws its approved
+  -- deck through Gen2VoxelClouds. Host clouds are optional here; the same
+  -- storm flash is connected to that deck by DramalessAtmos.
+  local okClouds,clouds=pcall(hostLib.require,'Clouds')
+  if not okClouds then clouds=nil end
   host={dayNight=dn,sky=sky,clouds=clouds}
+  if clouds then
+    originalCloudAltitude=clouds.ALT
+    clouds.ALT=1920
+  end
   host.renderer=hostLib.require('Voxel3D')
   originalWeatherHaze=host.renderer.weatherHazeProvider
   host.renderer.weatherHazeProvider=function()
@@ -414,10 +468,12 @@ function Storm.attach(hostLib,worldVoxel)
     if not scene.outdoor or scene.indoors then return 0 end
     return (V.require('QuestStormFront').haze or 0)*.00010,sky.haze()
   end
-  originalCloudLightning=clouds.lightningProvider
-  clouds.lightningProvider=Storm.cloudLightning
-  originalStormFront=clouds.stormFrontProvider
-  clouds.stormFrontProvider=function()return V.require('QuestStormFront').cloudField()end
+  if clouds then
+    originalCloudLightning=clouds.lightningProvider
+    clouds.lightningProvider=Storm.cloudLightning
+    originalStormFront=clouds.stormFrontProvider
+    clouds.stormFrontProvider=function()return V.require('QuestStormFront').cloudField()end
+  end
   if type(dn.tint)=='function' then
     originalTint=dn.tint
     dn.tint=function(outdoor,t) return Storm.tint(originalTint(outdoor,t),outdoor,false) end
@@ -433,8 +489,11 @@ function Storm.detach()
   if host then
     if originalTint then host.dayNight.tint=originalTint end
     host.sky.atmosphereProvider=originalProvider
-    host.clouds.lightningProvider=originalCloudLightning
-    host.clouds.stormFrontProvider=originalStormFront
+    if host.clouds then
+      host.clouds.lightningProvider=originalCloudLightning
+      host.clouds.ALT=originalCloudAltitude
+      host.clouds.stormFrontProvider=originalStormFront
+    end
     host.renderer.weatherHazeProvider=originalWeatherHaze
   end
   host,voxel,originalTint,originalProvider=nil,nil,nil,nil

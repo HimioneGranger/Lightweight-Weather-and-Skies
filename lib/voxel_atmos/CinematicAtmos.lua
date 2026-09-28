@@ -555,7 +555,26 @@ local function smoother01(t)
   return t * t * t * (t * (t * 6 - 15) + 10)
 end
 
+-- Gen 2 has no host cloud simulation. Keep its selected Weather FX profile
+-- continuous instead of replacing the entire sky deck on one menu tick.
+local questWeather = { key = "clear", from = WEATHER.clear, profile = WEATHER.clear, elapsed = 0 }
+function CinematicAtmos.setQuestWeather(key, dt)
+  CinematicAtmos.questSkyFallback = true
+  key = WEATHER[key] and key or "clear"
+  if key ~= questWeather.key then
+    questWeather.from = questWeather.profile
+    questWeather.key = key
+    questWeather.elapsed = 0
+  end
+  questWeather.elapsed = min(24, questWeather.elapsed + max(0, min(0.1, tonumber(dt) or 0)))
+  questWeather.profile = blendProfiles(questWeather.from, WEATHER[key],
+    smoother01(questWeather.elapsed / 24))
+end
+
 local function weatherProfile()
+  if V.questLitePrivate and CinematicAtmos.questSkyFallback then
+    return questWeather.profile, questWeather.key
+  end
   local selected = CinematicAtmos.weatherSetting:get() or "dynamic"
   if selected ~= "dynamic" then
     return WEATHER[selected] or WEATHER.partly, selected
@@ -568,6 +587,18 @@ local function weatherProfile()
   local b = DYNAMIC_WEATHER[dynamic.targetKey] or a
   local t = smoother01(dynamic.duration > 0 and dynamic.elapsed / dynamic.duration or 1)
   return blendProfiles(a, b, t), dynamic.currentKey .. ">" .. dynamic.targetKey
+end
+
+local function questFrontProfile(weather)
+  if not (CinematicAtmos.questSkyFallback and questWeather.key == "thunderstorm") then
+    return weather
+  end
+  local ok, front = pcall(V.require, "QuestStormFront")
+  if ok and front and front.managed then
+    local strength = min(1, max(0, (front.coverage or 0) + (front.warning or 0) * 0.16))
+    return blendProfiles(questWeather.from, weather, strength)
+  end
+  return weather
 end
 
 -- Effective puddle coverage for the current rendered frame. During a dry ->
@@ -648,6 +679,7 @@ end
 -- Clear/Partly/Mostly return nil and preserve Dramatic Shape's normal sky.
 function CinematicAtmos.skyWeather()
   local w, key = weatherProfile()
+  w = questFrontProfile(w)
   local flash = lightningFlashFor(w, ForestAtmos.time)
   if not (w and ((w.skyColor and w.skyBlend and w.skyBlend > 0) or flash > 0.001)) then return nil end
   return { color=w.skyColor, blend=w.skyBlend or 0, key=key, flash=flash }
@@ -919,6 +951,14 @@ function CinematicAtmos.frame(map, outdoor)
   if level <= 0 or not (outdoor or canopy) then return nil end
   local fogColor, rayColor = hourColors()
   local weather, weatherKey = weatherProfile()
+  if CinematicAtmos.questSkyFallback then
+    -- Cloud geometry, sky tint and precipitation see the same moving front.
+    weather = questFrontProfile(weather)
+    -- Quest weather-frame extensions must never mutate shared preset tables.
+    local copy = {}
+    for k, v in pairs(weather) do copy[k] = v end
+    weather = copy
+  end
   local lightning = lightningFlashFor(weather, ForestAtmos.time)
   if lightning > 0.001 then
     fogColor = mixColor(fogColor, { 0.84, 0.91, 1.00 }, min(0.72, lightning * 0.62))
@@ -2151,7 +2191,7 @@ local function particleShader()
   return particleShaderState or nil
 end
 
-local function buildParticleVertices(Voxel3D, frame, clouds)
+local function buildParticleVertices(Voxel3D, frame, clouds, cloudsOnly)
   local f = Voxel3D.focus
   if not f then return nil, nil end
   local cell = 48
@@ -2160,7 +2200,8 @@ local function buildParticleVertices(Voxel3D, frame, clouds)
   local sizeScale = particleSizeScale()
   local verts, indices, q = {}, {}, 0
   local corners = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } }
-  eachWeatherCell(Voxel3D, cell, radius, function(ix, iz)
+  if not cloudsOnly then
+    eachWeatherCell(Voxel3D, cell, radius, function(ix, iz)
     -- DENSITY 1 / SCALE 8 is byte-for-byte the A9 population/size recipe.
     -- Higher density adds genuinely independent motes rather than increasing
     -- alpha, so the result remains airy instead of becoming a white veil.
@@ -2204,7 +2245,8 @@ local function buildParticleVertices(Voxel3D, frame, clouds)
         q = q + 1
       end
     end
-  end)
+    end)
+  end
 
   -- MOSTLY CLOUDY M2: retain the proven shared particle/cloud render path,
   -- but go back to the visual ambiguity that worked in A14/A15. Each formation
@@ -2319,11 +2361,11 @@ local function buildParticleVertices(Voxel3D, frame, clouds)
   return verts, indices
 end
 
-local function drawParticles(Voxel3D, frame, clouds)
+local function drawParticles(Voxel3D, frame, clouds, cloudsOnly)
   local sh = particleShader()
   local axisR, axisU = billboardAxes(Voxel3D)
   if not (sh and axisR and axisU) then return end
-  local verts, indices = buildParticleVertices(Voxel3D, frame, clouds)
+  local verts, indices = buildParticleVertices(Voxel3D, frame, clouds, cloudsOnly)
   if not (verts and indices and #verts > 0) then return end
   if not particleMesh then
     local ok, mesh = pcall(love.graphics.newMesh, PARTICLE_FORMAT, verts, "triangles", "stream")
@@ -2331,7 +2373,7 @@ local function drawParticles(Voxel3D, frame, clouds)
     particleMesh = mesh
   else
     local ok = pcall(particleMesh.setVertices, particleMesh, verts)
-    if not ok then particleMesh = nil return drawParticles(Voxel3D, frame, clouds) end
+    if not ok then particleMesh = nil return drawParticles(Voxel3D, frame, clouds, cloudsOnly) end
   end
   pcall(particleMesh.setVertexMap, particleMesh, indices)
   pcall(love.graphics.setBlendMode, "alpha", "alphamultiply")
@@ -2971,7 +3013,7 @@ local function projectNoCurveNdc(Voxel3D, wx, wy, wz)
   return cx / cw, cy / cw, cw
 end
 
-local function buildCloudDescriptors(Voxel3D, frame)
+local function buildCloudDescriptors(Voxel3D, frame, questBudget)
   if frame.canopy or not (Voxel3D.eye and Voxel3D.focus) then return {} end
   local cloudsOn = true
   pcall(function()
@@ -3146,6 +3188,7 @@ local function buildCloudDescriptors(Voxel3D, frame)
                 local deckMin = floor(lerp(16, frame.level > 0.9 and 34 or 28, deckBlend) + 0.5)
                 puffs = max(puffs, deckMin)
               end
+              if questBudget then puffs = min(puffs, 18) end
 
               -- Prefer atmospheric centres in the upper half, but don't force
               -- every cloud into one horizon band. Near clouds may sit partly
@@ -3194,6 +3237,12 @@ local function buildCloudDescriptors(Voxel3D, frame)
   -- not camera-rank/cull visible formations.  The broad shoulder fade above
   -- is the budget boundary; all surviving candidates are drawn, sorted only
   -- back-to-front for stable alpha blending.
+  if questBudget and #candidates > 52 then
+    table.sort(candidates, function(a, b)
+      return (a.desirability or 0) < (b.desirability or 0)
+    end)
+    for i = #candidates, 53, -1 do candidates[i] = nil end
+  end
   table.sort(candidates, function(a, b)
     return (a.forwardDepth or 0) > (b.forwardDepth or 0)
   end)
@@ -3446,6 +3495,19 @@ local function drawClouds(Voxel3D, frame, clouds)
 end
 
 -- ---------- public draw
+
+-- Gen2 Battle Art has no VoxelCompanion atmosphere phases or cloud deck.
+-- Give the standalone bridge a narrow fallback that reuses the proven cloud
+-- descriptor/batch path without also enabling puddles, mist, rays or motes.
+function CinematicAtmos.drawQuestClouds(Voxel3D, map, outdoor)
+  CinematicAtmos.questSkyFallback = true
+  local frame = CinematicAtmos.frame(map, outdoor)
+  if not frame then return false end
+  local clouds = buildCloudDescriptors(Voxel3D, frame, true)
+  if #clouds == 0 then return false end
+  drawParticles(Voxel3D, frame, clouds, true)
+  return true
+end
 
 function CinematicAtmos.draw(map, outdoor, neighbors, posed)
   local Voxel3D = V.require("Voxel3D")

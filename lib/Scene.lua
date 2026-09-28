@@ -343,6 +343,7 @@ local function outdoorOf(ow, mapId)
   local def = ow and ow.map and ow.map.def
   if not def then return false end
   if forceIndoorMap(mapId) then return false end
+  if V.require('OutdoorWeatherAreas').parent(mapId) then return true end
   -- GEN 2 FIRST, because `Map.isOutdoor` cannot answer for it.  That
   -- function is `def.outdoor, else tileset == "OVERWORLD"` -- and a Gen 2
   -- map has neither: it carries `def.environment`, one of ROUTE, TOWN,

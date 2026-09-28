@@ -28,8 +28,12 @@ function N.levels(t)
 end
 local function time()
   local good,t=pcall(function()
-    local found=V.mod.find('BATTLE_ART_VOXEL_FORK')
-    return found.exports.lib.require('DayNight').time()
+    -- Interop discovers the active voxel host by capability and includes the
+    -- Gen 2 Battle Art id. A literal Gen 1 host lookup made every Gold-only
+    -- install fall back to 300 (day), suppressing MORN/NITE local cry pools.
+    local interop=V.require('Interop')
+    local dayNight=interop and interop.dayNight and interop.dayNight()
+    return dayNight and dayNight.time()
   end)
   return good and tonumber(t)or 300
 end
@@ -45,11 +49,35 @@ local function getBeds()
   return beds
 end
 local function activeGroup(data,map,phase)
-  local enc=data and data.encounters and data.encounters[map]
+  -- Prefer the engine's generation-neutral read-only encounter API. It
+  -- resolves Gen 2 MORN/DAY/NITE tables, swarms and encounter.table hooks,
+  -- while returning the same distribution shape on Gen 1.
+  local world=V.mod and V.mod.world
+  if world and type(world.effectiveEncounters)=='function' then
+    local daytime=({morning='MORN',day='DAY',night='NITE'})[phase] or 'DAY'
+    local ok,effective=pcall(world.effectiveEncounters,world,map,'grass',{daytime=daytime})
+    if ok and type(effective)=='table' and type(effective.dist)=='table' then
+      local group={rate=tonumber(effective.chance) or 0,slots={}}
+      for species,chance in pairs(effective.dist)do
+        if (tonumber(chance) or 0)>0 then group.slots[#group.slots+1]={species=species} end
+      end
+      table.sort(group.slots,function(a,b)return tostring(a.species)<tostring(b.species)end)
+      return group
+    end
+  end
+  local encounters=data and data.encounters
+  local enc=encounters and encounters[map]
   local grass=enc and enc.grass
+  -- Raw Gen 2 fallback for older hosts without mod.world.
+  if not grass and encounters and encounters.grass then grass=encounters.grass[map] end
   if not grass then return nil end
   -- Gen1 uses flat slots. Explicit timed groups must resolve to this phase;
   -- do not union all hours or guess an unknown encounter schema.
+  if grass.rates and grass.slots then
+    local key=({morning='MORN',day='DAY',night='NITE'})[phase] or 'DAY'
+    return {rate=tonumber(grass.rates[key] or grass.rates.DAY) or 0,
+      slots=grass.slots[key] or grass.slots.DAY or {}}
+  end
   if grass.slots then return grass end
   return grass[phase]
 end

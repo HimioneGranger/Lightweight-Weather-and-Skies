@@ -456,8 +456,8 @@ function Audio.update(dt)
     local silent=not inOverworldAudio() or Audio.masterGain()<=0 or storm.preferences().mode=='off'
     local live={}
     for _,src in ipairs(Audio._oneshots or {})do
-      if silent then stopSource(src)
-      elseif src.isPlaying and src:isPlaying() then live[#live+1]=src end
+      if not silent and src.isPlaying and src:isPlaying() then live[#live+1]=src
+      else stopSource(src);if src.release then pcall(src.release,src)end end
     end
     Audio._oneshots=live
   end
@@ -521,7 +521,9 @@ function Audio.update(dt)
     local gust=State.channel('gust') or 0
     if gust>.05 then windFile=Audio.windFileFor(State.current());windGain=math.min(1,gust)*Audio.WIND.gain end
   end
-  Variants.update(dt,wantFile,wantGain,windFile,windGain,master,sourceFor)
+  Audio._thunderDuck=math.max(0,(Audio._thunderDuck or 0)-dt)
+  local duck=1-.50*math.min(1,Audio._thunderDuck or 0)
+  Variants.update(dt,wantFile,wantGain,windFile,windGain,master*duck,sourceFor)
 
   -- ------- thunder one-shot on each new lightning strike
   local age = Lightning.age or -1
@@ -579,16 +581,20 @@ function Audio.update(dt)
         end)
         local vol = math.min(1, math.max(0.45, master * tg))
         if thunderEvent then
-          vol=math.max(0,math.min(.65,master*tg*thunderEvent.gain))
+          local gain=thunderEvent.gain or 0
+          if not thunderEvent.distant then gain=math.min(.90,gain*2) end
+          vol=math.max(0,math.min(.90,master*tg*gain))
           if playSrc.setPitch then playSrc:setPitch(thunderEvent.pitch) end
         end
         playSrc:setVolume(vol)
         if playSrc.setLooping then playSrc:setLooping(false) end
         playSrc:play()
+        if thunderEvent and not thunderEvent.distant then Audio._thunderDuck=2.5 end
         Audio._oneshots = Audio._oneshots or {}
         Audio._oneshots[#Audio._oneshots + 1] = playSrc
         while #Audio._oneshots > 6 do
-          stopSource(table.remove(Audio._oneshots, 1))
+          local expired=table.remove(Audio._oneshots,1)
+          stopSource(expired);if expired.release then pcall(expired.release,expired)end
         end
       end)
     else

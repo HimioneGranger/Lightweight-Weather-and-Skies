@@ -18,7 +18,7 @@
   ],
   "exactFunction": "weather_main.lua::wxPaintCelestialDisc -> lib/WorldCelestialDisc.lua",
   "adaptations": [
-    "L\u00c3\u2013VE built-in VertexColor declaration compatibility",
+    "L\u00d6VE built-in VertexColor declaration compatibility",
     "Exact disc painter into transparent world-space textures; OpenGL ES-safe shader identifiers",
     "Radial star/planet/constellation point edges per user request",
     "Draw full 1280-star catalogue and all 5 planets; restore source twinkle, 4 constellations and shooting stars",

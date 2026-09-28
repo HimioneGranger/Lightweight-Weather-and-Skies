@@ -1,6 +1,6 @@
 -- Pure selection. Installed mod presence never determines the active renderer.
 local R={}
-local profiles={BATTLE_ART_VOXEL_FORK='battle_art',DRAMATIC_SHAPE='dramatic',
+local profiles={BATTLE_ART_VOXEL_FORK='battle_art',BATTLE_ART_VOXEL_GEN2='battle_art_gen2',DRAMATIC_SHAPE='dramatic',
   DRAMALESS_SHAPE='dramaless',potato_voxel='potato',POTATO_VOXEL='potato',
   PotatoVoxel='potato',STADIUM2_OVERWORLD_MODELS='stadium2'}
 function R.select(pipeline,owner,platform,standalone)
@@ -8,8 +8,11 @@ function R.select(pipeline,owner,platform,standalone)
   if type(owner)~='string' then return 'unknown',nil end
   local kind=profiles[owner]
   if not kind then return 'unsupported',owner end
+  if kind=='battle_art_gen2' and platform=='Android' and standalone then
+    kind='battle_art_quest'
+  end
   if kind=='battle_art' then
-    if platform=='Android' then kind=standalone and 'battle_art_quest' or 'unsupported_android'
+    if platform=='Android' then kind=standalone and 'battle_art_quest' or 'battle_art_android'
     else kind='battle_art_pc'end
   end
   return kind,owner
