@@ -21,21 +21,22 @@ def require(relative: str, *needles: str) -> None:
 
 
 manifest = json.loads(text("manifest.json"))
-assert manifest["version"] == "1.0.0"
+assert manifest["version"] == "1.1.0"
 require("weather_main.lua", 'local ok, bridge = pcall(V.require, "VoxelAtmosBridge")')
 assert "pcall(bridge.init)" not in text("weather_main.lua")
 require("compat/BattleArtClient.lua", "bindCloudCeiling", "atmosphere_effects_draft==1")
 require("compat/CloudPackets.lua", "function self:ceilingAt", "altitude-65*front-110*shelf")
-require("compat/CloudsSource.lua", "Clouds.WEATHER_COVERAGE = 0.86", "RAIN_LIGHT = 0.75", "if id=='MOSTLY_CLOUDY' then target=.45 end")
-require("compat/Controls.lua", "about every 6 seconds", "Natural lightning is unchanged.")
+require("compat/Controls.lua", "about every 6 seconds", "Showcase timing is separate")
 require(
     "lib/QuestStorm.lua",
     "spicy.wait=6",
     "verification=verification==true",
     "lightningRate",
-    "cloudOnly=random(0,1)<0.50",
+    "ACTIVITY_MULTIPLIER=1.85",
+    "GROUND_STRIKE_CHANCE=.58",
+    "ANVIL_CLOUD_SHARE=.72",
 )
-require("lib/QuestStormBolt.lua", "SPICY_WIDTH_BOOST=2.25", "function Bolt.vertices")
+require("lib/QuestStormBolt.lua", "SPICY_WIDTH_BOOST=2.25", "function Bolt.widthScale")
 require("lib/Audio.lua", "Audio._thunderDuck=2.5", "gain=math.min(.90,gain*2)")
 require("README.md", "PR #57", "Android phone/tablet", "Safari Zone outdoor areas")
 print("release contract: PASS")

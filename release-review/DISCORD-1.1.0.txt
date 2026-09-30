@@ -1,0 +1,16 @@
+Lightweight Weather & Skies 1.1.0 — Lightning Update
+
+• 80 lightning profiles — 20 per type, with shuffled variation.
+• Longer, winding anvil crawlers with branching offshoots.
+• More visible descending forks on some ground strikes; subtle strikes remain.
+• More active natural storms and stronger FULL-mode storm lighting.
+• SOFT stays gentle; OFF still disables lightning.
+
+Fresh actual-renderer GIFs and download:
+https://github.com/HimioneGranger/Lightweight-Weather-and-Skies/releases/tag/v1.1.0
+
+Back up your save and replace the older LWS package—don't enable both.
+Battle Art/Quest bridge are still separate requirements.
+Gen 2 remains beta; non-VR Android remains alpha. Source tests and desktop
+renderer checks passed, but this lightning update has no fresh headset FPS
+or full-game acceptance. Flash-sensitive players: use SOFT or OFF.

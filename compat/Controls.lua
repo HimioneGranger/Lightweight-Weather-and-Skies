@@ -201,7 +201,7 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
       value=function()return world.lib.require('QuestMoon').previewStatus()end,
       step=function()return world.lib.require('QuestMoon').previewNext()end}
     out[#out+1]={id='quest:lightning:spicy',label='LIGHTNING: MAKE IT SPICY',
-      help='Two-minute verification showcase: high-contrast forked strikes and wide anvil crawlers ahead about every 6 seconds. Close all menus and keep looking forward; press again to stop. Respects SOFT/OFF. Natural lightning is unchanged.',
+      help='Two-minute verification showcase: high-contrast forked strikes and anvil crawlers ahead about every 6 seconds. Close all menus and keep looking forward; press again to stop. Respects SOFT/OFF. Showcase timing is separate from natural activity.',
       value=function()return storm.spicyStatus()end,
       step=function()return storm.triggerSpicy()end}
     for _,variant in ipairs({'anvil','rolling'})do

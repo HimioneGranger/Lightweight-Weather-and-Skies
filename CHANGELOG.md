@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — Lightning variety update
+
+- Doubled profiles to twenty per family, eighty total, with shuffled cycles.
+- Longer, thinner, winding anvil crawlers with three to five branches and
+  secondary forks that grow from their parent junctions.
+- Clearer descending forks on half the ground profiles; subtler strikes remain.
+- More natural activity and a ground-strike majority; stronger FULL illumination.
+- Protected pending thunder against fast-cadence overwrites. SOFT keeps its
+  gentle brightness/timing; OFF remains disabled, including showcases.
+- Bounded static meshes: at most 1,944 anvil or 864 ground vertices. Fresh
+  real-renderer GIFs, automated regressions and source review; no fresh
+  headset/full-game performance acceptance. Gen 2 beta and Android alpha remain.
+
 ## 1.0.0 — first public release
 
 - Gen 1 Quest visual and audio checks accepted by the owner. The Gen 1 PC cloud, sky and rain comparisons also passed on Gen1Recomp 0.2.24 with Battle Art 1.11.0. Gen 2 remains beta and non-VR Android is alpha; neither has a performance clearance claim.

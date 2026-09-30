@@ -2,7 +2,7 @@
 
 Moving clouds, changing weather, and a sky worth stopping to look at. Storms travel across the map; the sky shifts through day and night; rain, snow, lightning, auroras and meteors give you reasons to look up.
 
-**Release status:** Gen 1 is the main 1.0 track; the owner accepted the Quest weather, sky and lunar checks and the latest PC rain comparison. Gen 2 is beta, and non-VR Android is alpha. See [compatibility and known limits](#compatibility-and-release-status) before installing.
+**Release status:** 1.1.0 updates lightning on the established Gen 1 track. Its source tests and isolated GPU previews pass; the updated lightning has not had a fresh full-game or headset performance pass. Gen 2 remains beta, and non-VR Android remains alpha. See [compatibility and known limits](#compatibility-and-release-status) before installing.
 
 Built for **Battle Art on Gen1Recomp**, with Gen2Recomp support in beta. One LWS ZIP routes to PC, standalone Quest, or alpha non-VR Android as appropriate; Battle Art and the Quest bridge are separate installs.
 
@@ -106,11 +106,11 @@ As rain clears, precipitation tapers, clouds break up and daylight returns. A fa
 
 ## Lightning
 
-Flashing-light warning. There are **three visible lightning styles**: forked sky-to-ground strikes, anvil crawlers that spread across the cloud underside, and rolling light that travels through the cloud deck. A **fourth, distant-cloud style** lights the horizon without drawing a close bolt. All four families have **10 shape/timing profiles each (40 total)**, varying things like branching, sweep, width, glow spread and how quickly the flash disperses. Those are variations within four styles, not 40 entirely separate effects.
+Flashing-light warning. There are **three visible lightning styles**: forked sky-to-ground strikes, anvil crawlers that spread across the cloud underside, and rolling light that travels through the cloud deck. A **fourth, distant-cloud style** lights the horizon without drawing a close bolt. All four families have **20 shape/timing profiles each (80 total)**, varying branching, sweep, width, glow spread and flash dispersion. These are variations within four styles, not 80 separate effects.
 
-Profiles are shuffled within each family, so the ten do not play in the same fixed order; an immediate repeat at a shuffle boundary and an identical full-cycle ordering are prevented. Individual events also vary their path, position, direction, branch detail and delay to thunder. Lightning intervals vary with the selected pace and local weather, so this is not a predictable ten-flash playlist. **FULL** shows the world-space bolts; **SOFT** keeps the gentler cloud illumination.
+Each family shuffles twenty profiles without an immediate cycle-boundary repeat or identical consecutive cycle order. Individual events also vary their paths and placement. Anvil crawlers have longer, thinner winding channels with three to five branches and secondary forks growing from their junctions. Half the ground-strike profiles have clearer descending forks; the others retain subtle branching. Natural storms are more active, ground strikes are the majority of nearby events, and **FULL** has stronger storm illumination. **SOFT** retains gentle brightness and timing, and **OFF** disables lightning. Each event uses one static stereo-shared mesh, capped at 1,944 anvil or 864 ground vertices. Larger screen coverage and increased activity are not free; no zero-cost or headset FPS claim is made.
 
-Expand a preview to play its GIF. These use the mod's actual lightning and cloud renderer in an isolated scene—not headset gameplay footage. Each shows one example, not every possible variation.
+Expand a preview to play its GIF. The anvil and ground previews were captured from 1.1.0 at normal speed and natural FULL brightness using the actual lightning/cloud renderer in an isolated scene—not headset gameplay footage. The rolling preview is retained from 1.0. Each shows an example, not every profile.
 
 <details><summary>Forked lightning</summary>
 
@@ -137,6 +137,10 @@ Back up your save, import the LWS ZIP through the mod manager, enable it, and re
 The LWS download is one ZIP, but Battle Art and the Quest bridge remain separate host dependencies—they are not bundled into LWS. Do not use a private Gen 2 Lab APK as the public mod download.
 
 ### Compatibility and release status
+
+Platform acceptance statements below describe the 1.0 baseline. The 1.1.0
+lightning changes have source tests and isolated desktop GPU checks, not a
+fresh full-game or headset performance pass. Gen 3 is not supported by this ZIP.
 
 | Game and platform | Required host pieces | Status |
 | --- | --- | --- |

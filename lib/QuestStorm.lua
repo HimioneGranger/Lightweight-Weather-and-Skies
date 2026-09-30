@@ -18,6 +18,12 @@ local distant,distantQueued,distantReady,distantWait,distantTest=nil,nil,nil,nil
 local lastNear=-math.huge
 local spicy=nil
 Storm.FLASH_SPEED=1.25 -- 25% faster playback, not 25% more strikes
+-- Post-launch natural-storm tuning. Keep one event alive at a time; activity
+-- comes from shorter quiet gaps, not overlapping meshes or thunder queues.
+Storm.ACTIVITY_MULTIPLIER=1.85
+Storm.GROUND_STRIKE_CHANCE=.58
+Storm.ANVIL_CLOUD_SHARE=.72
+Storm.ANVIL_BASE_SPAN=1950
 Storm.VARIANTS={}
 local variantBags={}
 local variantSeed=math.max(1,(os.time()+104729)%2147483647)
@@ -25,14 +31,23 @@ local function variantRandom(n)
   variantSeed=(variantSeed*48271)%2147483647
   return 1+math.floor((variantSeed-1)/2147483646*n)
 end
--- Ten authored parameter profiles per family, plus existing per-event detail.
+-- Twenty parameter profiles per family, plus existing per-event detail.
 -- Keep the mesh budgets fixed; silhouette, sweep, width and dispersion vary.
 for _,kind in ipairs({'forked','anvil','rolling','cloud'})do
   local list={}
-  for i=1,10 do list[i]={id=i,kind=kind,
-    fade=.78+.04*i,dispersion=.72+.06*i,width=.80+.04*i,
-    span=.70+.06*i,radius=.68+.055*i,bend=(i-5.5)*26,
-    branches=1+i%2,reverse=i%2==0,
+  for i=1,20 do
+    local shape,timing=i,i
+    if i>10 then
+      -- Preserve the original ten; interleave ten distinct shape/timing
+      -- combinations inside their existing ranges, not larger envelopes.
+      shape=1+(((i-11)*7)%10+.5)*.9
+      timing=1+(((i-11)*3)%10+.5)*.9
+    end
+    list[i]={id=i,kind=kind,
+    fade=.78+.04*timing,dispersion=.72+.06*timing,width=.80+.04*shape,
+    span=.70+.06*shape,radius=.68+.055*timing,bend=(shape-5.5)*26,
+    branches=1+i%2,anvilBranches=3+(i*7)%3,
+    anvilWidth=1.65+.055*shape,reverse=i%2==0,
     jagged=.55+.09*((i*3)%10)} end
   Storm.VARIANTS[kind]=list
 end
@@ -40,9 +55,10 @@ local function nextVariant(kind)
   local bag=variantBags[kind]
   if not bag then bag={items={}};variantBags[kind]=bag end
   if #bag.items==0 then
-    for i=1,10 do bag.items[i]=i end
-    for i=10,2,-1 do local j=variantRandom(i);bag.items[i],bag.items[j]=bag.items[j],bag.items[i]end
-    if bag.items[10]==bag.last then bag.items[1],bag.items[10]=bag.items[10],bag.items[1]end
+    local count=#Storm.VARIANTS[kind]
+    for i=1,count do bag.items[i]=i end
+    for i=count,2,-1 do local j=variantRandom(i);bag.items[i],bag.items[j]=bag.items[j],bag.items[i]end
+    if bag.items[count]==bag.last then bag.items[1],bag.items[count]=bag.items[count],bag.items[1]end
     -- Random shuffling alone can reproduce the previous permutation. Reject
     -- that exact order explicitly; swapping the last two played entries
     -- leaves the no-immediate-repeat boundary protection intact.
@@ -61,7 +77,7 @@ local function distantRandom(a,b)
 end
 local function nextDistant(pace)
   local r=distantGaps[pace]or distantGaps.calm
-  return distantRandom(r[1],r[2])/1.5
+  return distantRandom(r[1],r[2])/Storm.ACTIVITY_MULTIPLIER
 end
 local function distantStrike(preview)
   local eye=voxel and voxel.eye or {0,32,0}
@@ -95,7 +111,7 @@ function Storm.preferences()
 end
 local function gap(pace)
   local range=Storm.GAPS[pace] or Storm.GAPS.calm
-  return random(range[1],range[2])/1.5
+  return random(range[1],range[2])/Storm.ACTIVITY_MULTIPLIER
 end
 function Storm.reset()
   remaining,active,queued,ready,wasEligible,lastMap=nil,nil,nil,nil,false,nil
@@ -121,12 +137,12 @@ local function strike(mode,preview,style,verification)
   local eye=voxel and voxel.eye or {0,32,0}
   local far=voxel and (voxel.far or (voxel.camera and voxel.camera.far)) or 1600
   local cloudY=host and host.clouds and host.clouds.ALT or 1920
-  local cloudOnly=random(0,1)<0.50
+  local cloudOnly=random(0,1)>Storm.GROUND_STRIKE_CHANCE
   if preview then cloudOnly=false end
   -- A ground strike beginning at the raised cloud deck is almost entirely
   -- above the eye when only 280-440 units away. Place the full-height bolt
   -- out toward the storm horizon instead. Cloud crawlers keep their existing
-  -- world placement; the total natural lightning cadence is unchanged.
+  -- world placement; the post-launch scheduler still keeps one event at a time.
   local distance=cloudOnly
     and random(math.min(280,far*.35),math.min(440,far*.58))
     or random(2100,2500)
@@ -144,7 +160,7 @@ local function strike(mode,preview,style,verification)
   displace(points,top,hit,cloudOnly and 32 or 45,4)
   local fork
   if random(0,1)<0.5 then
-    local p=points[7];fork={p}
+    local p=points[7];fork={p};fork.parentPath,fork.parentPoint=points,7
     displace(fork,p,{p[1]+random(-65,65),p[2]-random(35,90),p[3]+random(-50,50)},14,3)
   end
   Storm.serial=Storm.serial+1
@@ -152,9 +168,13 @@ local function strike(mode,preview,style,verification)
     distance=distance,cloudOnly=cloudOnly,boltAlpha=0,origin={eye[1],eye[2],eye[3]},
     verification=verification==true}
   active.style=style=='anvil' and 'anvil' or style=='rolling' and 'rolling'
-    or (not preview and cloudOnly and (Storm.serial%2==0 and 'anvil' or 'rolling')) or 'forked'
+    or (not preview and cloudOnly
+      and (random(0,1)<Storm.ANVIL_CLOUD_SHARE and 'anvil' or 'rolling')) or 'forked'
   local variant=nextVariant(active.style)
   active.variant=variant
+  -- Half the ground profiles show pronounced forks; the others stay subtle.
+  -- Reuse the existing six-segment arms, with no extra mesh or draw calls.
+  active.prominentForks=active.style=='forked' and variant.id%2==1
   if active.style=='forked' then
     for i,p in ipairs(points)do
       local u=(i-1)/(#points-1);local bend=math.sin(math.pi*u)*variant.bend
@@ -169,14 +189,25 @@ local function strike(mode,preview,style,verification)
   end
   active.branches={}
   for j=1,variant.branches do
-    local p=points[j==1 and (3+variant.id%5) or (10+variant.id%4)]
-    local branch={p}
+    local anchor=j==1 and (3+variant.id%5) or (10+variant.id%4)
+    local p=points[anchor]
+    local branch={p};branch.parentPath,branch.parentPoint=points,anchor
     local side=shapeRandom(0,1)<.5 and -1 or 1
     local dx,dz=side*shapeRandom(50,95)*variant.span,shapeRandom(-60,60)*variant.span
+    local drop
+    if active.prominentForks then
+      local reach=side*shapeRandom(280,480)*variant.span
+      local depth=shapeRandom(-60,60)
+      dx,dz=math.cos(az)*reach+math.sin(az)*depth,
+        -math.sin(az)*reach+math.cos(az)*depth
+      drop=math.min(p[2]*.85,shapeRandom(300,650))
+    end
     for k=1,6 do
       local u=k/6
-      branch[#branch+1]={p[1]+dx*u+shapeRandom(-8,8),
-        math.max(0,p[2]-shapeRandom(65,110)*u),p[3]+dz*u+shapeRandom(-8,8)}
+      local jitter=active.prominentForks and 24 or 8
+      branch[#branch+1]={p[1]+dx*u+shapeRandom(-jitter,jitter),
+        math.max(0,p[2]-(drop or shapeRandom(65,110))*u),
+        p[3]+dz*u+shapeRandom(-jitter,jitter)}
     end
     active.branches[#active.branches+1]=branch
   end
@@ -184,24 +215,83 @@ local function strike(mode,preview,style,verification)
     -- Capture the cloud path once, in world coordinates. Crawlers skim just
     -- under the opaque deck; rolling events light its interior without a bolt.
     cloudOnly=true;active.cloudOnly=true
-    local range=shapeRandom(1100,1700)
+    -- Anvils share the visible storm horizon with ground strikes instead of
+    -- crowding the top of a level Quest view. Rolling light stays nearer.
+    local range=active.style=='anvil' and shapeRandom(1900,2500)
+      or shapeRandom(1100,1700)
     local cx,cz=eye[1]+math.sin(az)*range,eye[3]+math.cos(az)*range
-    local span=(active.style=='rolling' and 1800 or 1000)*variant.span
+    local span=(active.style=='rolling' and 1800 or Storm.ANVIL_BASE_SPAN)*variant.span
     local sx,sz=math.cos(az)*span/2,-math.sin(az)*span/2
-    active.points={};active.fork=nil;active.branches={}
-    for i=0,20 do
-      local u=i/20
-      if variant.reverse then u=1-u end
-      local bend=math.sin(math.pi*u)*variant.bend
-      active.points[#active.points+1]={cx+sx*(2*u-1)+math.sin(az)*bend+shapeRandom(-24,24)*variant.jagged,
-        cloudY-45+shapeRandom(-14,14),cz+sz*(2*u-1)+math.cos(az)*bend+shapeRandom(-24,24)*variant.jagged}
+    active.points={};active.fork=nil;active.branches={};active.twigs={}
+    local segments=active.style=='anvil' and 26 or 20
+    if active.style=='anvil' then
+      local phase=shapeRandom(-math.pi,math.pi)
+      local sweep=shapeRandom(75,125)*variant.span
+      for i=0,segments do
+        local u=i/segments
+        if variant.reverse then u=1-u end
+        -- Broad changing sweeps and small kinks make an irregular winding channel.
+        local bend=math.sin(u*math.pi*2.5+phase)*sweep
+          +math.sin(u*math.pi*5.5-phase*.7)*sweep*.38
+          +shapeRandom(-30,30)*variant.jagged
+        active.points[#active.points+1]={cx+sx*(2*u-1)+math.sin(az)*bend,
+          cloudY-45+shapeRandom(-12,12),cz+sz*(2*u-1)+math.cos(az)*bend}
+      end
+    else
+      for i=0,20 do
+        local u=i/20
+        if variant.reverse then u=1-u end
+        local bend=math.sin(math.pi*u)*variant.bend
+        active.points[#active.points+1]={cx+sx*(2*u-1)+math.sin(az)*bend+shapeRandom(-24,24)*variant.jagged,
+          cloudY-45+shapeRandom(-14,14),
+          cz+sz*(2*u-1)+math.cos(az)*bend+shapeRandom(-24,24)*variant.jagged}
+      end
     end
     if active.style=='anvil' then
-      for j=1,variant.branches do
-        local p=active.points[j==1 and 7 or 14];local branch={p}
-        for k=1,6 do branch[#branch+1]={p[1]+math.sin(az)*k*25+shapeRandom(-12,12),
-          p[2]-k*4,p[3]+math.cos(az)*k*25+shapeRandom(-12,12)}end
+      -- Children retain their parent junction for the renderer's reveal.
+      local count=variant.anvilBranches
+      for j=1,count do
+        local anchor=math.floor(shapeRandom(3,segments-1))
+        local branch={active.points[anchor]}
+        branch.parentPath,branch.parentPoint=active.points,anchor
+        local side=shapeRandom(0,1)<.5 and -1 or 1
+        local bearing=az+side*shapeRandom(.48,1.20)
+        for k=1,7 do
+          bearing=bearing+shapeRandom(-.38,.38)
+          local step=shapeRandom(48,90)*variant.span
+          local p=branch[#branch]
+          branch[#branch+1]={p[1]+math.sin(bearing)*step,
+            p[2]+shapeRandom(-8,5),p[3]+math.cos(bearing)*step}
+        end
         active.branches[#active.branches+1]=branch
+        for t=1,1+j%2 do
+          local joint=math.floor(shapeRandom(3,8))
+          local twig={branch[joint]}
+          twig.parentPath,twig.parentPoint=branch,joint
+          local before,after=branch[joint-1],branch[joint+1]
+          local twigBearing=math.atan2(after[1]-before[1],after[3]-before[3])
+            +side*shapeRandom(.6,1.4)
+          for k=1,2 do
+            twigBearing=twigBearing+shapeRandom(-.4,.4)
+            local p=twig[#twig];local step=shapeRandom(45,82)*variant.span
+            twig[#twig+1]={p[1]+math.sin(twigBearing)*step,
+              p[2]+shapeRandom(-6,4),p[3]+math.cos(twigBearing)*step}
+          end
+          active.twigs[#active.twigs+1]=twig
+        end
+      end
+      for j=1,2 do
+        local anchor=math.floor(segments*(j==1 and .27 or .72)+shapeRandom(-2,2))
+        local twig={active.points[anchor]}
+        twig.parentPath,twig.parentPoint=active.points,anchor
+        local bearing=az+(j==1 and -1 or 1)*shapeRandom(.65,1.25)
+        for k=1,2 do
+          bearing=bearing+shapeRandom(-.4,.4)
+          local p=twig[#twig];local step=shapeRandom(45,82)*variant.span
+          twig[#twig+1]={p[1]+math.sin(bearing)*step,
+            p[2]+shapeRandom(-6,4),p[3]+math.cos(bearing)*step}
+        end
+        active.twigs[#active.twigs+1]=twig
       end
     end
     active.cloudLight={active.points[1][1],active.points[1][3],
@@ -217,6 +307,7 @@ local function strike(mode,preview,style,verification)
   if front.managed then
     local paths={active.points,active.fork or {}}
     for _,p in ipairs(active.branches or {})do paths[#paths+1]=p end
+    for _,p in ipairs(active.twigs or {})do paths[#paths+1]=p end
     for _,path in ipairs(paths)do for _,p in ipairs(path)do p[1],p[3]=front.constrain(p[1],p[3])end end
     if active.cloudLight then
       active.cloudLight[1],active.cloudLight[2]=active.points[1][1],active.points[1][3]
@@ -227,6 +318,7 @@ local function strike(mode,preview,style,verification)
   if cloudCeiling then
     local paths={active.points,active.fork or {}}
     for _,branch in ipairs(active.branches or {})do paths[#paths+1]=branch end
+    for _,twig in ipairs(active.twigs or {})do paths[#paths+1]=twig end
     local adjusted={}
     for _,path in ipairs(paths)do for _,p in ipairs(path)do
       if not adjusted[p] then
@@ -327,7 +419,7 @@ function Storm.update(dt,state,settings)
     distantWait=5;front.cell.showcaseFlashQueued=true
   end
   remaining=math.max(0,(remaining or 0)-dt*cadence)
-  if not nearAllowed then remaining=math.max(remaining,12/1.5) end
+  if not nearAllowed then remaining=math.max(remaining,12/Storm.ACTIVITY_MULTIPLIER) end
   if spicy then
     spicy.left=spicy.left-dt;spicy.wait=spicy.wait-dt
     remaining=math.max(remaining,12)
@@ -349,7 +441,11 @@ function Storm.update(dt,state,settings)
     remaining=math.max(remaining,12);distantWait=nextDistant(pref.pace)
   elseif testRequested then
     strike(pref.mode,true,testRequested);testRequested=false;remaining=gap(pref.pace)
-  elseif remaining<=0 and nearAllowed then strike(pref.mode);remaining=gap(pref.pace) end
+  elseif remaining<=0 and nearAllowed
+      and not active and not queued and not ready
+      and not distant and not distantQueued and not distantReady then
+    strike(pref.mode);remaining=gap(pref.pace)
+  end
   Storm.flashValue=0
   if active then
     active.age=active.age+dt
@@ -358,13 +454,16 @@ function Storm.update(dt,state,settings)
     local variant=active.variant
     local visualAge=active.age*Storm.FLASH_SPEED
     local verification=active.verification==true
-    local life=(active.style=='rolling' and 2.6 or active.style=='anvil' and 1.7
-      or mode=='soft' and 1.8 or .85)*variant.fade*(verification and 1.40 or 1)
+    local verificationBoost=verification and mode=='full'
+    local life=(active.style=='rolling' and 2.6 or active.style=='anvil' and (mode=='soft' and 1.7 or 2.4)
+      or mode=='soft' and 1.8 or .85)*variant.fade*(verificationBoost and 1.40 or 1)
     if visualAge>=life then active=nil
     else
       local f=math.sin(math.pi*visualAge/life)^2
-      local flashBoost=verification and 3.50 or 1
-      Storm.flashValue=math.min(1,f*(mode=='soft' and .12 or .24)*lightStrength*flashBoost)
+      -- Verification visibility boosts are FULL-only. SOFT stays at its
+      -- accessibility-oriented natural envelope even during the showcase.
+      local flashBoost=verificationBoost and 3.50 or 1
+      Storm.flashValue=math.min(1,f*(mode=='soft' and .12 or .30)*lightStrength*flashBoost)
       -- Fast luminous core, then a single smooth decay: no repeated strobe.
       local rise=math.min(1,visualAge/(.045*variant.fade))
       local fade=math.max(0,1-math.max(0,visualAge-.045*variant.fade)/(.52*variant.dispersion))
@@ -372,7 +471,7 @@ function Storm.update(dt,state,settings)
         rise*rise*(3-2*rise)*fade*fade*(verification and 1.35 or 1)) or 0
       active.reveal=1
       if active.style~='forked' then
-        local progress=math.min(1,visualAge/((active.style=='rolling' and 2.3 or 1.05)*variant.dispersion))
+        local progress=math.min(1,visualAge/((active.style=='rolling' and 2.3 or mode=='soft' and 1.05 or 1.25)*variant.dispersion))
         active.reveal=progress
         local path=active.points
         local cursor=progress*(#path-1)
@@ -382,16 +481,17 @@ function Storm.update(dt,state,settings)
         active.cloudLight[2]=path[index][3]+(path[index+1][3]-path[index][3])*u
         local spread=progress*progress*(3-2*progress)
         active.cloudLight[3]=1/(active.cloudRadius*(.65+.65*spread))
-        active.cloudLight[4]=math.min(1,f*(mode=='soft' and .09 or .20)*lightStrength
-          *(verification and 2 or 1))
+        active.cloudLight[4]=math.min(1,f*(mode=='soft' and .09 or .26)*lightStrength
+          *(verificationBoost and 2 or 1))
         Storm.flashValue=active.style=='anvil'
-          and Storm.flashValue*(verification and .65 or .35) or 0
+          and Storm.flashValue*(verificationBoost and .65
+            or mode=='soft' and .35 or .45) or 0
         active.boltAlpha=mode=='full' and active.style=='anvil'
           and math.min(1,f*(verification and 1.15 or .85)) or 0
       else
         active.cloudLight[3]=1/(650+350*math.min(1,visualAge/life))
         active.cloudLight[4]=math.min(1,f*(mode=='soft' and .065 or .16)*lightStrength
-          *(verification and 2 or 1))
+          *(verificationBoost and 2 or 1))
       end
     end
   end
@@ -399,7 +499,9 @@ function Storm.update(dt,state,settings)
   -- Leave nearby strike + thunder space untouched; distant events use only
   -- a quiet gap with enough room for their delayed roll to arrive first.
   distantWait=math.max(0,(distantWait or nextDistant(pref.pace))-dt*cadence)
-  if not spicy and distantWait<=0 and remaining>11/1.5 and Storm.clock-lastNear>6/1.5
+  if not spicy and distantWait<=0
+      and remaining>11/Storm.ACTIVITY_MULTIPLIER
+      and Storm.clock-lastNear>6/Storm.ACTIVITY_MULTIPLIER
       and not active and not queued and not ready
       and not distant and not distantQueued and not distantReady then
     distantStrike(false);distantWait=nextDistant(pref.pace)
@@ -413,7 +515,7 @@ function Storm.update(dt,state,settings)
       local spread=math.min(1,visualAge/(life*distant.variant.dispersion))
       distant.light[3]=1/(distant.radius*(.65+.65*spread*spread*(3-2*spread)))
       distant.light[4]=math.sin(math.pi*visualAge/life)^2
-        *(pref.mode=='soft' and .07 or .14)*math.max(lightStrength,
+        *(pref.mode=='soft' and .07 or .18)*math.max(lightStrength,
           approaching and (front.cell.strength or 0)*math.min(1,(front.warning or 0)*2) or 0)
     end
   end

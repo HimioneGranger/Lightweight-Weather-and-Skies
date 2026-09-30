@@ -79,8 +79,8 @@ def main() -> int:
         "fileCount": len(files),
         "status": "PENDING EXACT-ARTIFACT AUDIT",
         "openChecks": [
-            "owner reports the Gen 1 Quest checks passed in a private RC Lab; the final cloud-spacing adjustment was checked on PC, not separately on Quest",
-            "owner reports the Gen 1 PC cloud, sky and rain comparisons passed; Gen 2 is beta and non-VR Android is alpha",
+            "1.1.0 lightning has automated and isolated desktop GPU checks, not a fresh full-game/headset performance pass",
+            "prior 1.0 Gen 1 acceptance is historical; Gen 2 remains beta and non-VR Android alpha; Gen 3 is not a supported game in this ZIP",
             "showcase controls intentionally leave some manual weather selected; return WEATHER to AUTO is documented",
             "permission is owner-reported and credited, without a blanket upstream license claim",
             "this generated ZIP still needs an exact-artifact inventory, provenance, naming and media audit before publication",
