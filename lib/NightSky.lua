@@ -129,6 +129,7 @@ local EVE_START, EVE_END = 17.0, 20.0
 
 --- Global star visibility 0..1 from DAY / EVE / NITE / MORN only.
 function NightSky.computeNightVisibility()
+  if type(V._rseNightVisibility) == "function" then return V._rseNightVisibility() end
   local TOD = NightSky._TOD
   if not TOD then
     pcall(function()
@@ -499,6 +500,7 @@ local function pushQuad(verts, n, cx, cy, cz, half, axisR, axisU, r, g, b, a)
   return n
 end
 
+if V.mod and V.mod.generation == 3 then local path = 'compat/gen3/Gen3NightStars.lua'; local builder = assert((loadstring or load)(assert(V.mod:read(path)), '@weather/' .. path))(V); pushQuad, skyTangentAxes = builder.pushQuad, builder.tangentAxes end -- Gen 3 full per-eye build, lower-allocation helpers
 local function celestialLod()
   local lod = { starStep = 1, maxPlanets = 5, twinkle = true, meteors = true }
   pcall(function()
@@ -695,18 +697,87 @@ function NightSky.drawWorld(Voxel3D, time)
   local desktopProfile = DesktopWeatherProfile.current()
   local desktopSize = DesktopWeatherProfile.value(desktopProfile, 'starSize', 1, 3)
   local desktopBrightness = DesktopWeatherProfile.value(desktopProfile, 'starBrightness', 1, 3)
+  -- spikes fix (2026-10-01): the horizon fade and the building-proximity factor were looked up inside the
+  -- per-star loop through pcall(function() ... end), a new closure (plus upvalues) per star per eye per
+  -- frame = the largest single source of Lua garbage at night. Both lookups are made once per call here;
+  -- the values and the error handling (a failing lookup leaves the neutral value 1) are unchanged.
+  local horizonFadeFn
+  do
+    local okS, Sim = pcall(V.require, "CelestialSim")
+    if okS and Sim and type(Sim.horizonFade) == "function" then horizonFadeFn = Sim.horizonFade end
+  end
+  local blFactor = 1
+  do
+    local okB, BL = pcall(V.require, "BuildingLight")
+    if okB and BL and type(BL.factor) == "number" then blFactor = BL.factor end
+    if blFactor < 0 then blFactor = 0 elseif blFactor > 1 then blFactor = 1 end
+  end
+  -- LITE weather tier (exports.setQuestWeatherTier("lite")) - an explicit look tier,
+  -- "frames first": the star/planet vertex list is built once per frame and the second
+  -- eye reuses it (no rebuild, no mesh:setVertices upload). The usual rule (see
+  -- compat/gen3/Gen3NightStars.lua) is never to reuse first-eye vertices in another
+  -- eye; under LITE that is deliberately waived because the stars sit ~420 units away and
+  -- the inter-eye offset (~0.04 units) is invisible. FULL and OFF never take this path.
+  -- Reuse only when every input is identical (time, night visibility, step, radius,
+  -- scale, vault angle, brightness/size, building factor, planets/twinkle/meteor LOD,
+  -- billboard axes within 0.15, ignored for sky-tangent quads) and the eye is within 0.5
+  -- world units of the cached build (Lab 55 integration: per-eye forwards differ slightly).
+  -- Twinkle still advances every frame because `t` is part of the key.
+  local reuse = false
+  local lite = false
+  local litePf
+  do
+    local ex = V.mod and V.mod.exports
+    local pf = type(ex) == "table" and ex.questPerf or nil
+    lite = type(pf) == "table" and pf.tier == "lite"
+    if lite then litePf = pf end
+  end
+  local lc = NightSky._liteStars
+  -- the host eye is in the weather layer's own units (pixels on Gen 3 hosts), so the eye
+  -- tolerance scales with the sky radius: 0.4% of it (an IPD is ~0.15% here)
+  local eyeTol = radius * 0.004
+  if lite then
+    if not lc then lc = {}; NightSky._liteStars = lc end
+    if lc.valid and mesh and lc.mesh == mesh
+        and lc.t == t and lc.nightVis == nightVis and lc.step == step and lc.radius == radius
+        and lc.scale == scale and lc.vault == vaultAng and lc.dsize == desktopSize
+        and lc.dbright == desktopBrightness and lc.bl == blFactor
+        and lc.planets == lod.maxPlanets and lc.twinkle == lod.twinkle and lc.meteors == lod.meteors
+        and lc.stable == (Voxel3D.stableStarBillboards and true or false)
+        and lc.constel == (NightSky.constellationsEnabled() and true or false)
+        and math.abs(lc.ex - e[1]) <= eyeTol and math.abs(lc.ey - e[2]) <= eyeTol and math.abs(lc.ez - e[3]) <= eyeTol
+        and (lc.stable or (math.abs(lc.rx - axisR[1]) <= 0.15 and math.abs(lc.ry - axisR[3]) <= 0.15
+        and math.abs(lc.ux - axisU[1]) <= 0.15 and math.abs(lc.uy - axisU[2]) <= 0.15)) then
+      reuse = true
+      n = lc.n
+      NightSky._liteReuses = (NightSky._liteReuses or 0) + 1
+    elseif lc.valid then
+      -- diagnostics only (read by desktop drivers through exports.questPerf): the first key
+      -- that forced a rebuild; plain string constants, no allocation
+      litePf.liteMiss = (lc.mesh ~= mesh and "mesh") or (lc.t ~= t and "time")
+        or (lc.nightVis ~= nightVis and "nightVis") or (lc.scale ~= scale and "scale")
+        or (lc.vault ~= vaultAng and "vault") or (lc.bl ~= blFactor and "building")
+        or (lc.radius ~= radius and "radius")
+        or ((math.abs(lc.ex - e[1]) > eyeTol or math.abs(lc.ey - e[2]) > eyeTol or math.abs(lc.ez - e[3]) > eyeTol) and "eye")
+        or (lc.stable ~= (Voxel3D.stableStarBillboards and true or false) and "stable") or "axes/lod"
+    end
+    litePf.liteReuses, litePf.liteBuilds = NightSky._liteReuses or 0, NightSky._liteBuilds or 0
+  elseif lc then
+    lc.valid = false
+  end
+  if not reuse then
   for i = 1, #STARS, step do
     local s = STARS[i]
     local fade = NightSky.starFade(s, nightVis)
-    local dens = NightSky.buildingDensityMul(s)
+    local dens = (s and s.hideNearBuilding) and blFactor or 1
     if fade > 0.01 and dens > 0.02 then
       local sdx, sdy, sdz = rotateY(s.dx, s.dy, s.dz, vaultAng)
       -- Horizon fade for stars near/below horizon
       local hf = 1
-      pcall(function()
-        local Sim = V.require("CelestialSim")
-        if Sim and Sim.horizonFade then hf = Sim.horizonFade(sdy) end
-      end)
+      if horizonFadeFn then
+        local okH, hv = pcall(horizonFadeFn, sdy)
+        if okH and hv ~= nil then hf = hv end
+      end
       if hf >= 0.02 then
         local cx = e[1] + sdx * radius
         local cy = e[2] + sdy * radius
@@ -779,6 +850,18 @@ function NightSky.drawWorld(Voxel3D, time)
     end
   end
 
+  if lite then
+    lc.valid = true; lc.mesh = mesh; lc.n = n
+    lc.t, lc.nightVis, lc.step, lc.radius, lc.scale, lc.vault = t, nightVis, step, radius, scale, vaultAng
+    lc.dsize, lc.dbright, lc.bl = desktopSize, desktopBrightness, blFactor
+    lc.planets, lc.twinkle, lc.meteors = lod.maxPlanets, lod.twinkle, lod.meteors
+    lc.stable = Voxel3D.stableStarBillboards and true or false
+    lc.constel = NightSky.constellationsEnabled() and true or false
+    lc.ex, lc.ey, lc.ez = e[1], e[2], e[3]
+    lc.rx, lc.ry, lc.ux, lc.uy = axisR[1], axisR[3], axisU[1], axisU[2]
+    NightSky._liteBuilds = (NightSky._liteBuilds or 0) + 1
+  end
+  end -- not reuse
   mesh:setDrawRange(1, n)
   local began = false
   if Voxel3D.beginEffect then

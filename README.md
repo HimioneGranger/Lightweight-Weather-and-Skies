@@ -2,7 +2,7 @@
 
 Moving clouds, changing weather, and a sky worth stopping to look at. Storms travel across the map; the sky shifts through day and night; rain, snow, lightning, auroras and meteors give you reasons to look up.
 
-**Release status:** 1.1.0 updates lightning on the established Gen 1 track. Its source tests and isolated GPU previews pass; the updated lightning has not had a fresh full-game or headset performance pass. Gen 2 remains beta, and non-VR Android remains alpha. See [compatibility and known limits](#compatibility-and-release-status) before installing.
+**1.2.0 release candidate:** Rain/snow rendering improvements, snow-only ground frost, sand/dust, contextual softer fireflies and revised celestial rendering are joined by the newer FireRed/Emerald lab performance and menu fixes. Gen1/2 and source tests are recorded separately from native/headset acceptance. Synchronized shadows require matching host-renderer integration. Puddles and god rays are excluded. No new headset FPS claim is made; historical 1.1.0 compatibility notes are not acceptance of this candidate. See [the 1.2 integration notes](release-review/GEN3-INTEGRATION-1.2.0.md) for host requirements and pending release checks.
 
 Built for **Battle Art on Gen1Recomp**, with Gen2Recomp support in beta. One LWS ZIP routes to PC, standalone Quest, or alpha non-VR Android as appropriate; Battle Art and the Quest bridge are separate installs.
 

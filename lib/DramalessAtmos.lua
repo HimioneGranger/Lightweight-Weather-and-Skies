@@ -143,7 +143,7 @@ local function attachNightSkyHost(NightSky)
   if not (NightSky and Atmos._hostLib) then return end
   local hostLib = Atmos._hostLib
   pcall(function()
-    -- The standalone Quest adapter uses the weather system's 12-minute clock as the only
+    -- The private Quest build uses Weather FX's 12-minute clock as the only
     -- celestial authority. Battle Art's independent DayNight module can be in
     -- a different phase and would otherwise turn stars on during our daytime.
     if V.questLitePrivate then
@@ -214,6 +214,7 @@ local function buildNamespace(hostLib)
   }
 
   function W.require(name)
+    if name == 'DayNight' and V._rseAtmosDayNight then return V._rseAtmosDayNight(hostLib, QUEST_WEATHER) end
     if own[name] ~= nil then
       if own[name] == false then error("circular require " .. name, 0) end
       return own[name]
@@ -272,8 +273,8 @@ local function celestialPass(label, draw)
   g.pop()
   Atmos._celestialDiagnostics = Atmos._celestialDiagnostics or {}
   local message = ok and "rendered" or tostring(result)
-  if Atmos._celestialDiagnostics[label] ~= message then
-    Atmos._celestialDiagnostics[label] = message
+  if Atmos._celestialDiagnostics[label] ~= message:gsub("%d+%.?%d*", "#") then
+    Atmos._celestialDiagnostics[label] = message:gsub("%d+%.?%d*", "#")
     local text = "q96 World " .. label .. ": " .. message
     print(text)
     pcall(function()
@@ -286,7 +287,7 @@ local function celestialPass(label, draw)
   return ok, result
 end
 
-local function drawInScene(skyOnly)
+local function drawInSceneLegacy(skyOnly, tier)
   if not Atmos._drawing or not want3d() then return end
   pcall(function()
     local TOD = V.require("TimeOfDay")
@@ -354,14 +355,14 @@ local function drawInScene(skyOnly)
   -- Quest renders celestial objects before the alpha-blended cloud deck.
   -- Gen2 draws the approved deck directly in its live sky pass.
   -- Interiors must not reach the late celestial fallback when the host skips its sky pass.
-  if outdoor and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
+  if tier ~= "off" and outdoor and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
   -- Sun/Moon first (day + night): same 3D path as stars, independent of nightVis.
   pcall(function()
     if not Atmos._NightSky then
       Atmos._NightSky = V.require("NightSky")
     end
     local NightSky = Atmos._NightSky
-    -- The standalone Quest path draws CelestialBodies once below. Other hosts use
+    -- The private Quest path draws CelestialBodies once below. Other hosts use
     -- NightSky's normal ownership-aware renderer.
     if not V.questLitePrivate and NightSky and NightSky.drawSunMoonWorld then
       pcall(NightSky.drawSunMoonWorld, Voxel3D)
@@ -465,7 +466,7 @@ local function drawInScene(skyOnly)
   end)
 
   end -- celestial portion
-  if skyOnly and V.questLitePrivate
+  if tier ~= "off" and skyOnly and V.questLitePrivate
       and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2" then
     local cloudOk = celestialPass("gen2-clouds", function()
       if not Atmos._gen2CloudDeck then
@@ -477,7 +478,7 @@ local function drawInScene(skyOnly)
     Atmos._cloudsDrawnThisScene = cloudOk
   end
   if skyOnly then return end
-  if V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
       and not Atmos._cloudsDrawnThisScene then
     celestialPass("gen2-clouds", function()
       if not Atmos._gen2CloudDeck then
@@ -489,8 +490,8 @@ local function drawInScene(skyOnly)
   end
   -- Stock Gen 1 Battle Art has no Clouds.draw seam. Render the same weather
   -- deck once in our existing late per-eye pass instead of depending on a
-  -- host modification; depth testing keeps it behind terrain.
-  if V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_FORK"
+  -- private host modification; depth testing keeps it behind terrain.
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_FORK"
       and not Atmos._gen1CloudWrapped and outdoor then
     celestialPass("gen1-clouds", function()
       if not Atmos._gen2CloudDeck then
@@ -510,6 +511,7 @@ local function drawInScene(skyOnly)
       -- descriptors, mist banks, rays, puddles, reflections, and distant
       -- scenery. We borrow only its weather profile and feed The World's
       -- proven WorldPrecip renderer inside the active per-eye voxel scene.
+      if mod.generation == 3 then Atmos._gen3PrecipPass = Atmos._gen3PrecipPass or chunkFor("compat/gen3/Gen3PrecipPass.lua")(V, Atmos, QUEST_WEATHER); return Atmos._gen3PrecipPass.draw(Voxel3D, cin, map, outdoor) end
       local frame = cin.frame and cin.frame(map, outdoor) or nil
       -- CinematicAtmos supports several hosts and therefore also samples the
       -- host DayNight clock. Reassert our single Quest clock after profiling.
@@ -562,6 +564,534 @@ local function drawInScene(skyOnly)
   if prevBlend then pcall(love.graphics.setBlendMode, prevBlend, prevAlpha) end
   if pr then pcall(love.graphics.setColor, pr, pg, pb, pa) end
   pcall(love.graphics.setDepthMode, "lequal", true)
+end
+
+-- ---------------------------------------------------------------------------
+-- Frame-hoisted form of drawInScene (the default; see mod.exports.questPerf
+-- and exports.setFrameHoist). Same calls, same order, same side effects as
+-- drawInSceneLegacy above, but the per-call `pcall(function() ... end)`
+-- closures and `function() ... end` pass bodies are predefined functions that
+-- take their inputs as arguments or upvalues, so a pass allocates nothing.
+-- The OFF branch of the switch runs drawInSceneLegacy unchanged.
+-- ---------------------------------------------------------------------------
+local function syncNightFromTOD()
+  local TOD = V.require("TimeOfDay")
+  local night = TOD and (TOD.pin == "NITE" or TOD.tod == "NITE" or (TOD.isNight and TOD.isNight()))
+  package.loaded._WX_NIGHT = night and true or false
+end
+
+local shearKX, shearKZ, shearHour
+local function readShearHour()
+  local TOD = V.require("TimeOfDay")
+  shearHour = TOD and TOD.hour
+end
+local function readShearFromBodies()
+  local CB = V.require("CelestialBodies")
+  if CB and CB.shearAt then
+    shearHour = nil
+    pcall(readShearHour)
+    shearKX, shearKZ = CB.shearAt(shearHour)
+  end
+end
+local function alignShear()
+  if not Atmos._DayNight or not Atmos._ShadowMap then
+    local hostLib = Atmos._hostLib
+    if not hostLib then return end
+    if not Atmos._DayNight then
+      local ok, DN = pcall(hostLib.require, "DayNight")
+      if ok then Atmos._DayNight = DN end
+    end
+    if not Atmos._ShadowMap then
+      local ok, SM = pcall(hostLib.require, "ShadowMap")
+      if ok then Atmos._ShadowMap = SM end
+    end
+  end
+  local DayNight, ShadowMap = Atmos._DayNight, Atmos._ShadowMap
+  if not ShadowMap then return end
+  shearKX, shearKZ = nil, nil
+  pcall(readShearFromBodies)
+  if type(shearKX) ~= "number" and DayNight and DayNight.shearAt then
+    local tt = DayNight.time and DayNight.time() or 0
+    shearKX, shearKZ = DayNight.shearAt(tt)
+  end
+  if type(shearKX) == "number" and type(shearKZ) == "number" then
+    ShadowMap.KX, ShadowMap.KZ = shearKX, shearKZ
+  end
+end
+
+local function sunMoonProbe(Voxel3D)
+  if not Atmos._NightSky then
+    Atmos._NightSky = V.require("NightSky")
+  end
+  local NightSky = Atmos._NightSky
+  if not V.questLitePrivate and NightSky and NightSky.drawSunMoonWorld then
+    pcall(NightSky.drawSunMoonWorld, Voxel3D)
+  end
+end
+
+local function attachNightSkyTOD(NightSky)
+  local TOD = V.require("TimeOfDay")
+  if TOD then NightSky._TOD = TOD end
+end
+local function attachNightSkyInner(NightSky)
+  local hostLib = Atmos._hostLib
+  if V.questLitePrivate then
+    NightSky._DayNight = nil
+  else
+    local ok, DN = pcall(hostLib.require, "DayNight")
+    if ok and DN then NightSky._DayNight = DN end
+  end
+  if not NightSky._FirstPerson then
+    local ok2, FP = pcall(hostLib.require, "FirstPerson")
+    if ok2 then NightSky._FirstPerson = FP end
+  end
+  if not NightSky._Voxel then
+    local ok3, Voxel = pcall(hostLib.require, "Voxel")
+    if not ok3 or not Voxel then
+      ok3, Voxel = pcall(hostLib.require, "VoxelState")
+    end
+    if ok3 and Voxel then NightSky._Voxel = Voxel end
+  end
+  pcall(attachNightSkyTOD, NightSky)
+end
+local function attachNightSkyHostFast(NightSky)
+  if not (NightSky and Atmos._hostLib) then return end
+  pcall(attachNightSkyInner, NightSky)
+end
+
+local function forceNightVisibility(NightSky)
+  local night = false
+  local TOD = NightSky._TOD
+  if V.questLitePrivate then
+    if TOD and TOD.isNight then
+      local okN, n = pcall(TOD.isNight)
+      if okN and n then night = true end
+    end
+    if not night and TOD and (TOD.pin == "NITE" or TOD.pin == "NIGHT"
+        or TOD.tod == "NITE" or TOD.tod == "NIGHT") then night = true end
+    if not night and TOD and type(TOD.hour) == "number" then
+      local h = TOD.hour % 24
+      night = h >= 20 or h < 4
+    end
+    package.loaded._WX_NIGHT = night
+    if rawget(_G, "V") then V._WX_NIGHT = night end
+  else
+    if NightSky.isNight and NightSky.isNight(nil) then night = true end
+    local DN = NightSky._DayNight or Atmos._DayNight
+    if not night and DN and DN.isNight then
+      local okN, n = pcall(DN.isNight)
+      if okN and n then night = true end
+    end
+    if not night and TOD and (TOD.pin == "NITE" or TOD.tod == "NITE") then night = true end
+  end
+  if night then
+    NightSky._nightVis = 1
+    NightSky._nightVisRaw = 1
+    package.loaded._WX_NIGHT = true
+  end
+end
+
+local function starsPass(Voxel3D)
+  if not Atmos._NightSky then
+    Atmos._NightSky = V.require("NightSky")
+  end
+  local NightSky = Atmos._NightSky
+  if not NightSky then return end
+  attachNightSkyHostFast(NightSky)
+  pcall(forceNightVisibility, NightSky)
+  local tt = (Atmos._forest and Atmos._forest.time) or 0
+  local ok = false
+  if NightSky.drawWorld then
+    ok = NightSky.drawWorld(Voxel3D, tt) and true or false
+  end
+  if not ok and not V.questLitePrivate and NightSky.draw then
+    pcall(function()
+      local w, h = love.graphics.getDimensions()
+      if Voxel3D and Voxel3D.canvas then
+        local o, cw, ch = pcall(function()
+          return Voxel3D.canvas:getWidth(), Voxel3D.canvas:getHeight()
+        end)
+        if o and cw then w, h = cw, ch end
+      end
+      pcall(love.graphics.push)
+      pcall(love.graphics.origin)
+      pcall(love.graphics.setDepthMode, "always", false)
+      NightSky.draw(w, h, h * 0.7, nil, tt)
+      pcall(love.graphics.setDepthMode, "lequal", true)
+      pcall(love.graphics.pop)
+    end)
+  end
+end
+
+local sunHour, sunBodies
+local function readSunBodies() sunBodies = V.require("CelestialBodies") end
+local function readSunHour()
+  local TOD = V.require("TimeOfDay")
+  sunHour = TOD and TOD.hour
+end
+local function sunMoonPass(Voxel3D)
+  sunBodies = nil
+  pcall(readSunBodies)
+  local CB = sunBodies
+  sunBodies = nil
+  if not CB then
+    local src = mod:read("lib/CelestialBodies.lua")
+    if src then CB = assert((loadstring or load)(src, "@CelestialBodies"))(V) end
+  end
+  if not CB or not CB.drawWorld then return end
+  sunHour = nil
+  pcall(readSunHour)
+  local hour = sunHour
+  pcall(love.graphics.setDepthMode, "always", false)
+  local drawn = CB.drawWorld(Voxel3D, hour)
+  if V.questLitePrivate and not drawn then
+    error("World body renderer declined at hour " .. tostring(hour))
+  end
+  pcall(love.graphics.setDepthMode, "lequal", true)
+end
+
+local function drawAurora(Voxel3D) V.require("QuestAurora").drawWorld(Voxel3D) end
+local function drawRainbow(Voxel3D) V.require("QuestRainbow").drawWorld(Voxel3D) end
+local function drawStormBolt(Voxel3D) V.require("QuestStormBolt").drawWorld(Voxel3D) end
+
+local function celestialTail(label, ok, result)
+  Atmos._celestialDiagnostics = Atmos._celestialDiagnostics or {}
+  local message = ok and "rendered" or tostring(result)
+  if Atmos._celestialDiagnostics[label] ~= message:gsub("%d+%.?%d*", "#") then
+    Atmos._celestialDiagnostics[label] = message:gsub("%d+%.?%d*", "#")
+    local text = "q96 World " .. label .. ": " .. message
+    print(text)
+    pcall(function()
+      local compat = mod:find("BATTLE_ART_QUEST_COMPAT")
+      local xr = compat.exports.lib.require("VRXRQuest")
+      if xr.trace then xr.trace(text) end
+    end)
+    if not ok then pcall(mod.log.warn, mod.log, "%s", text) end
+  end
+  return ok, result
+end
+-- Same push/pcall/pop/diagnostics as celestialPass, with the pass body and its
+-- argument passed separately so no closure is built per eye. A pass that
+-- already reported "rendered" skips the (string-allocating) diagnostics.
+local function celestialPassFast(label, draw, arg)
+  local g = love.graphics
+  g.push("all")
+  local ok, result = pcall(draw, arg)
+  g.pop()
+  local diag = Atmos._celestialDiagnostics
+  if ok and diag and diag[label] == "rendered" then return ok, result end
+  return celestialTail(label, ok, result)
+end
+
+-- LITE tier: aurora, rainbow and storm-bolt passes push/pop their own full
+-- graphics state whenever they draw, and return before touching anything when
+-- idle, so the extra push("all")/pop around them is skipped (same pixels).
+local function celestialPassBare(label, draw, arg)
+  local ok, result = pcall(draw, arg)
+  local diag = Atmos._celestialDiagnostics
+  if ok and diag and diag[label] == "rendered" then return ok, result end
+  return celestialTail(label, ok, result)
+end
+
+local gen2Voxel, gen2Map, gen2Outdoor
+local function gen2CloudBody()
+  if not Atmos._gen2CloudDeck then
+    Atmos._gen2CloudDeck = V.require('Gen2VoxelClouds').new(Atmos._hostLib, gen2Voxel)
+  end
+  assert(Atmos._gen2CloudDeck:draw(gen2Map, Atmos._lastNeighbors, gen2Outdoor),
+    'original voxel cloud deck declined')
+end
+local function gen1CloudBody()
+  if not Atmos._gen2CloudDeck then
+    Atmos._gen2CloudDeck = V.require("Gen2VoxelClouds").new(
+      Atmos._hostLib, gen2Voxel, { depthTest = true })
+  end
+  assert(Atmos._gen2CloudDeck:draw(gen2Map, Atmos._lastNeighbors, gen2Outdoor),
+    "weather cloud deck declined")
+end
+
+local function syncNightQuest()
+  local TOD = V.require("TimeOfDay")
+  local night = TOD and TOD.isNight and TOD.isNight() or false
+  package.loaded._WX_NIGHT = night and true or false
+  if rawget(_G, "V") then V._WX_NIGHT = night and true or false end
+end
+local function precipBody(Voxel3D, cin, map, outdoor)
+  if V.questLitePrivate then
+    if mod.generation == 3 then Atmos._gen3PrecipPass = Atmos._gen3PrecipPass or chunkFor("compat/gen3/Gen3PrecipPass.lua")(V, Atmos, QUEST_WEATHER); return Atmos._gen3PrecipPass.draw(Voxel3D, cin, map, outdoor) end
+    local frame = cin.frame and cin.frame(map, outdoor) or nil
+    pcall(syncNightQuest)
+    local WP = Atmos._worldPrecip
+    if not WP and Atmos._ns then
+      WP = Atmos._ns.require("WorldPrecip")
+      Atmos._worldPrecip = WP
+    end
+    if frame and WP and WP.update and WP.draw then
+      local id = tostring(Atmos._wxId or "CLEAR"):upper()
+      frame = questWeatherFrame(frame, id)
+      local eye=Voxel3D.eye or Voxel3D.player or {0,32,0}
+      local focus={eye[1],0,eye[3]}
+      if Atmos._precipSurfaceMap~=map then
+        if Atmos._precipSurfaceMap and WP.invalidate then WP.invalidate() end
+        local shapeAPI=Atmos._hostLib.require('TileShape')
+        Atmos._precipSurface=V.require('QuestRainSurface').sampler(map,shapeAPI)
+        Atmos._precipSurfaceMap=map
+      end
+      frame.weather.surfaceAt=Atmos._precipSurface
+      local serial = Atmos._updateSerial or 0
+      if Atmos._lastPrecipSerial ~= serial then
+        WP.update(Atmos._updateDelta or 0, focus, frame.weather)
+        Atmos._lastPrecipSerial = serial
+      end
+      WP.draw(Voxel3D, frame)
+      Atmos._lastQuestFrame = id
+    end
+  elseif cin.draw then
+    cin.draw(map, outdoor, Atmos._lastNeighbors, Atmos._lastPosed)
+  end
+end
+
+local function drawInSceneFast(skyOnly, tier)
+  if not Atmos._drawing or not want3d() then return end
+  pcall(syncNightFromTOD)
+  local cin = Atmos._cin
+  local Voxel3D = Atmos._Voxel3D
+  if not (cin and Voxel3D and Voxel3D.vp) then return end
+
+  pcall(alignShear)
+
+  local map = Atmos._lastMap
+  local outdoor = Atmos._lastOutdoor
+  if outdoor == nil then outdoor = true end
+
+  local prevBlend, prevAlpha
+  local okB, pbB, pbA = pcall(love.graphics.getBlendMode)
+  if okB then prevBlend, prevAlpha = pbB, pbA end
+  local pr, pg, pb, pa
+  local okC, c1, c2, c3, c4 = pcall(love.graphics.getColor)
+  if okC then pr, pg, pb, pa = c1, c2, c3, c4 end
+
+  if tier ~= "off" and outdoor
+      and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
+    pcall(sunMoonProbe, Voxel3D)
+    if V.questLitePrivate then
+      if tier == "lite" then
+        celestialPassBare("aurora", drawAurora, Voxel3D)
+        celestialPassBare("rainbow", drawRainbow, Voxel3D)
+      else
+        celestialPassFast("aurora", drawAurora, Voxel3D)
+        celestialPassFast("rainbow", drawRainbow, Voxel3D)
+      end
+    end
+    celestialPassFast("stars", starsPass, Voxel3D)
+    celestialPassFast("sun-moon", sunMoonPass, Voxel3D)
+  end -- celestial portion
+  if tier ~= "off" and skyOnly and V.questLitePrivate
+      and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2" then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    local cloudOk = celestialPassFast("gen2-clouds", gen2CloudBody)
+    Atmos._cloudsDrawnThisScene = cloudOk
+  end
+  if skyOnly then return end
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
+      and not Atmos._cloudsDrawnThisScene then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    celestialPassFast("gen2-clouds", gen2CloudBody)
+  end
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_FORK"
+      and not Atmos._gen1CloudWrapped and outdoor then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    celestialPassFast("gen1-clouds", gen1CloudBody)
+  end
+  gen2Voxel, gen2Map = nil, nil
+  if V.questLitePrivate then
+    if tier == "lite" then
+      celestialPassBare('storm-bolt', drawStormBolt, Voxel3D)
+    else
+      celestialPassFast('storm-bolt', drawStormBolt, Voxel3D)
+    end
+  end
+  local ok, err = pcall(precipBody, Voxel3D, cin, map, outdoor)
+  if not ok then
+    Atmos._lastDrawError = tostring(err)
+  else
+    Atmos._lastDrawError = nil
+  end
+
+  pcall(love.graphics.setShader)
+  if prevBlend then pcall(love.graphics.setBlendMode, prevBlend, prevAlpha) end
+  if pr then pcall(love.graphics.setColor, pr, pg, pb, pa) end
+  pcall(love.graphics.setDepthMode, "lequal", true)
+end
+
+-- Runtime-only performance state (mod.exports.questPerf, see main.lua).
+local function questPerf()
+  local e = mod.exports
+  if type(e) ~= "table" then return { hoist = true, tier = "full" } end
+  local p = e.questPerf
+  if type(p) ~= "table" then p = { hoist = true, tier = "full" }; e.questPerf = p end
+  return p
+end
+local perfCache = questPerf()
+
+-- ---------------------------------------------------------------------------
+-- Lab 52 frame-once form (exports.setFrameOnce; default OFF, drawInSceneFast above is then used unchanged).
+-- Same draw calls in the same order with the same graphics state at every draw as drawInSceneFast. Differences:
+--  * the night flag, the shear and the sun bodies/hour are read once per frame (not per eye per call); every call
+--    re-applies the cached values (package.loaded._WX_NIGHT, ShadowMap.KX/KZ) so each pass sees what it saw before.
+--    A cache entry is stamped with perf.frameSerial (frameBegin) and perf.tickSerial (every batched tick and flush),
+--    so it cannot outlive a weather/clock update. The shear falls back to the per-call form when it did not come from
+--    CelestialBodies (the DayNight clock fallback is not frame-invariant).
+--  * no getBlendMode/getColor query and no restore tail: all four callers wrap the call in push('all')/pop, which
+--    restores exactly what the tail restored (the sky-only form never ran the tail).
+--  * aurora, rainbow and storm-bolt run without the extra push/pop: each pushes its own full graphics state around its body
+--    and its early returns touch nothing. Stars and sun-moon keep their guard (they leave depth write, blend and colour changed).
+-- ---------------------------------------------------------------------------
+local function stampValid(c)
+  local p = perfCache
+  return p.frameSerial ~= nil and c.fs == p.frameSerial and c.ts == p.tickSerial
+end
+local nightStamp = { ok = false, night = false }
+local function computeNightOnce()
+  local TOD = V.require("TimeOfDay")
+  local night = TOD and (TOD.pin == "NITE" or TOD.tod == "NITE" or (TOD.isNight and TOD.isNight()))
+  nightStamp.night = night and true or false
+end
+local function applyNightOnce()
+  local c = nightStamp
+  if not stampValid(c) then
+    c.fs, c.ts = perfCache.frameSerial, perfCache.tickSerial
+    c.ok = pcall(computeNightOnce)
+  end
+  if c.ok then package.loaded._WX_NIGHT = c.night end
+end
+
+local shearStamp = { stable = false }
+local function computeShearOnce()
+  local c = shearStamp
+  c.stable, c.sm, c.kx, c.kz = false, nil, nil, nil
+  if not Atmos._DayNight or not Atmos._ShadowMap then
+    local hostLib = Atmos._hostLib
+    if not hostLib then return end
+    if not Atmos._DayNight then
+      local ok, DN = pcall(hostLib.require, "DayNight")
+      if ok then Atmos._DayNight = DN end
+    end
+    if not Atmos._ShadowMap then
+      local ok, SM = pcall(hostLib.require, "ShadowMap")
+      if ok then Atmos._ShadowMap = SM end
+    end
+  end
+  local DayNight, ShadowMap = Atmos._DayNight, Atmos._ShadowMap
+  if not ShadowMap then return end
+  shearKX, shearKZ = nil, nil
+  pcall(readShearFromBodies)
+  local viaBodies = type(shearKX) == "number"
+  if not viaBodies and DayNight and DayNight.shearAt then
+    local tt = DayNight.time and DayNight.time() or 0
+    shearKX, shearKZ = DayNight.shearAt(tt)
+  end
+  if type(shearKX) == "number" and type(shearKZ) == "number" then
+    ShadowMap.KX, ShadowMap.KZ = shearKX, shearKZ
+    c.sm, c.kx, c.kz, c.stable = ShadowMap, shearKX, shearKZ, viaBodies
+  end
+end
+local function applyShearOnce()
+  local c = shearStamp
+  if not stampValid(c) then
+    c.fs, c.ts = perfCache.frameSerial, perfCache.tickSerial
+    pcall(computeShearOnce) -- one alignShear's worth of work, and its writes
+    return
+  end
+  if c.stable then
+    local sm = c.sm
+    sm.KX, sm.KZ = c.kx, c.kz
+  else
+    pcall(alignShear)
+  end
+end
+
+local sunStamp = {}
+local function sunMoonPassOnce(Voxel3D)
+  local c = sunStamp
+  if not stampValid(c) then
+    c.fs, c.ts = perfCache.frameSerial, perfCache.tickSerial
+    sunBodies = nil
+    pcall(readSunBodies)
+    c.cb = sunBodies
+    sunBodies = nil
+    sunHour = nil
+    pcall(readSunHour)
+    c.hour = sunHour
+  end
+  local CB = c.cb
+  if not CB then return sunMoonPass(Voxel3D) end -- module missing: the per-call fallback (source load) as before
+  if not CB.drawWorld then return end
+  pcall(love.graphics.setDepthMode, "always", false)
+  local drawn = CB.drawWorld(Voxel3D, c.hour)
+  if V.questLitePrivate and not drawn then
+    error("World body renderer declined at hour " .. tostring(c.hour))
+  end
+  pcall(love.graphics.setDepthMode, "lequal", true)
+end
+
+local function drawInSceneOnce(skyOnly, tier)
+  if not Atmos._drawing or not want3d() then return end
+  applyNightOnce()
+  local cin = Atmos._cin
+  local Voxel3D = Atmos._Voxel3D
+  if not (cin and Voxel3D and Voxel3D.vp) then return end
+
+  applyShearOnce()
+
+  local map = Atmos._lastMap
+  local outdoor = Atmos._lastOutdoor
+  if outdoor == nil then outdoor = true end
+
+  if tier ~= "off" and outdoor
+      and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
+    if not (V.questLitePrivate and Atmos._NightSky) then pcall(sunMoonProbe, Voxel3D) end
+    if V.questLitePrivate then
+      celestialPassBare("aurora", drawAurora, Voxel3D)
+      celestialPassBare("rainbow", drawRainbow, Voxel3D)
+    end
+    celestialPassFast("stars", starsPass, Voxel3D)
+    celestialPassFast("sun-moon", sunMoonPassOnce, Voxel3D)
+  end -- celestial portion
+  if tier ~= "off" and skyOnly and V.questLitePrivate
+      and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2" then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    local cloudOk = celestialPassFast("gen2-clouds", gen2CloudBody)
+    Atmos._cloudsDrawnThisScene = cloudOk
+  end
+  if skyOnly then return end
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_GEN2"
+      and not Atmos._cloudsDrawnThisScene then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    celestialPassFast("gen2-clouds", gen2CloudBody)
+  end
+  if tier ~= "off" and V.questLitePrivate and Atmos._hostId == "BATTLE_ART_VOXEL_FORK"
+      and not Atmos._gen1CloudWrapped and outdoor then
+    gen2Voxel, gen2Map, gen2Outdoor = Voxel3D, map, outdoor
+    celestialPassFast("gen1-clouds", gen1CloudBody)
+  end
+  gen2Voxel, gen2Map = nil, nil
+  if V.questLitePrivate then celestialPassBare('storm-bolt', drawStormBolt, Voxel3D) end
+  local ok, err = pcall(precipBody, Voxel3D, cin, map, outdoor)
+  if not ok then
+    Atmos._lastDrawError = tostring(err)
+  else
+    Atmos._lastDrawError = nil
+  end
+end
+
+local function drawInScene(skyOnly)
+  local tier = perfCache.tier
+  if perfCache.hoist then
+    if perfCache.frameOnce == true then return drawInSceneOnce(skyOnly, tier) end
+    return drawInSceneFast(skyOnly, tier)
+  end
+  return drawInSceneLegacy(skyOnly, tier)
 end
 
 -- Gen 2 Quest owns its visible background through QuestSky, and its stereo
@@ -662,8 +1192,8 @@ function Atmos.install()
   end
   Atmos._hostId = hostId
 
-  -- General hosts keep their own clock. The standalone Quest adapter uses
-  -- the accelerated solar/lunar cycle, so it must remain
+  -- General hosts keep their own clock. The private Quest study explicitly
+  -- asked for The World's accelerated solar/lunar cycle, so it must remain
   -- clock authority and drive both the celestial sphere and Quest sky.
   if not V.questLitePrivate then
     pcall(function()
@@ -865,6 +1395,13 @@ function Atmos.install()
         local g=love.graphics
         Atmos._skyDrawnThisScene=false
         if not (g.getCanvas and g.getCanvas()) or not Atmos._drawing or not want3d() then return end
+        if perfCache.hoist and perfCache.frameOnce == true then
+          -- Lab 52: drawInSceneOnce(true) has no net graphics-state change (every pass is bracketed or restores itself)
+          local ok,err=pcall(drawInScene,true)
+          Atmos._skyDrawnThisScene=ok
+          if not ok then Atmos._lastDrawError=tostring(err) end
+          return
+        end
         g.push('all')
         local ok,err=pcall(drawInScene,true)
         g.pop()
@@ -1015,9 +1552,10 @@ function Atmos.syncFromWeatherFx(state)
   end
 end
 
-function Atmos.update(dt)
+function Atmos.update(dt, last)
   Atmos._updateSerial = (Atmos._updateSerial or 0) + 1
-  Atmos._updateDelta = math.max(0, math.min(0.1, tonumber(dt) or 0))
+  -- `last` (Lab 52 frame-once): the final tick's dt of a batched update; the per-frame precipitation step keeps using it
+  Atmos._updateDelta = math.max(0, math.min(0.1, tonumber(last == nil and dt or last) or 0))
   if not Atmos._ready then Atmos.install() end
   if not Atmos.active() then
     if not Atmos._ready then return end

@@ -89,6 +89,11 @@ local function use3dFog()
   return VoxelAtmos and VoxelAtmos.handlesFog and VoxelAtmos.handlesFog()
 end
 
+-- Match the existing draw suppression, but avoid simulating invisible snow.
+local function hide2dSnow()
+  return use3dPrecip() or (Settings.isFirstPerson and Settings.isFirstPerson()) or false
+end
+
 -- WHICH WEATHER THIS FRAME IS SHOWING.
 --
 -- Two authorities, one per context, and never both at once:
@@ -383,7 +388,7 @@ function Draw.update(dt, level)
   local splashesOn = precipitation
     and Settings.is("splash", "on") and Config.visual("splashes")
   Particles.update(dt, ch, Quality.budget(tuning.density), Draw.wind,
-    Scene.now.camX, Scene.now.camY, splashesOn)
+    Scene.now.camX, Scene.now.camY, splashesOn, hide2dSnow())
 
   local mode = Settings.get("lightning")
   if not Config.visual("lightning") then mode = "off" end
@@ -573,7 +578,7 @@ function Draw.pass(x, y, w, h, scale, alpha, precipitation)
       ch2.rain = 0
       ch2.snow = 0
       drawCh = ch2
-    elseif Settings.isFirstPerson and Settings.isFirstPerson() then
+    elseif hide2dSnow() then
       local ch2 = {}
       for k, v in pairs(ch) do ch2[k] = v end
       ch2.snow = 0

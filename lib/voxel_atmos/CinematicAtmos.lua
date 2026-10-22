@@ -3565,4 +3565,5 @@ function CinematicAtmos.invalidate()
   mistShaderState, rollShaderState, particleShaderState, rainShaderState, rayShaderState, cloudShaderState, puddleBaseShaderState = nil, nil, nil, nil, nil, nil, nil
 end
 
+if V.mod and V.mod.generation == 3 then CinematicAtmos.gen3PrecipFrame = assert(load(V.mod:read('compat/gen3/Gen3PrecipFrame.lua'), '@Gen3PrecipFrame'))(weatherProfile, questFrontProfile, settingLevel, DayNight, function() return snowState.wxId end) end
 return CinematicAtmos

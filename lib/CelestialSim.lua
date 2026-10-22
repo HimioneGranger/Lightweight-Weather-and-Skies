@@ -102,6 +102,37 @@ local function dirFromAlpha(alpha)
   return dx, dy, dz
 end
 
+-- ---------------------------------------------------------------------------
+-- Fixed sun azimuth (exports.setFixedSunAzimuth, see main.lua). Runtime-only.
+-- When unset (nil) nothing below runs and every direction is exactly the
+-- original East-Up arc. When set, elevation and arc timing still come from the
+-- clock (dy = sin(alpha) is untouched); only the horizontal heading is pinned.
+--
+-- CONVENTION (the one place to change it): the azimuth is the heading of the
+-- direction TOWARD the body, in degrees, in the world x/z plane measured from
+-- +X (east) toward +Z (south): 0 = east, 90 = south, 180 = west, 270 = north.
+-- pinnedHeading() is the only function that turns it into x/z components.
+-- ---------------------------------------------------------------------------
+local function fixedSetting()
+  local m = V.mod
+  local e = m and m.exports
+  local p = type(e) == "table" and e.questPerf or nil
+  if type(p) == "table" and type(p.fixedSunAzimuth) == "number" then
+    return p.fixedSunAzimuth, p.fixedSunSweep or 0
+  end
+  return nil
+end
+
+-- alpha: the body's arc angle (cos(alpha) < 0 means "afternoon side", > 0
+-- "morning side"). The heading wanders by +-sweep degrees with cos(alpha), so
+-- it is continuous through noon, sunset and night (no jump at any hour).
+local function pinnedHeading(az, sweep, alpha)
+  local c = math.cos(alpha)
+  local h = c < 0 and -c or c       -- horizontal share of the unit vector
+  local a = math.rad(az + sweep * c)
+  return h * math.cos(a), h * math.sin(a)
+end
+
 --- Full snapshot for renderers / lighting.
 function Sim.sample(hour)
   hour = Sim.hour(hour)
@@ -109,6 +140,13 @@ function Sim.sample(hour)
   local la = Sim.lunarAlpha(hour)
   local sdx, sdy, sdz = dirFromAlpha(sa)
   local mdx, mdy, mdz = dirFromAlpha(la)
+  local fixedAz, fixedSweep = fixedSetting()
+  if fixedAz then
+    -- The moon takes the SAME heading as the sun, so a shadow baked away from
+    -- the sun also falls away from the moon at night.
+    sdx, sdz = pinnedHeading(fixedAz, fixedSweep, sa)
+    mdx, mdz = pinnedHeading(fixedAz, fixedSweep, la)
+  end
 
   local sunFade = Sim.horizonFade(sdy)
   local moonFade = Sim.horizonFade(mdy)

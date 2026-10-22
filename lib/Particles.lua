@@ -344,12 +344,12 @@ local WET_LIFE = 1.0
 -- `ch` is the eased channel table; `budget` the quality caps; `wind` the
 -- frame's gust in GB pixels per second; `camX/camY` the world camera, for
 -- splash anchoring; `splashesOn` the player's setting.
-function P.update(dt, ch, budget, wind, camX, camY, splashesOn)
+function P.update(dt, ch, budget, wind, camX, camY, splashesOn, snowHidden)
   if dt <= 0 then return end
   local px = rect.scale
 
   if rain.n < budget.rain then grow(rain, budget.rain, spawnRain) end
-  if snow.n < budget.snow then grow(snow, budget.snow, spawnSnow) end
+  if not snowHidden and snow.n < budget.snow then grow(snow, budget.snow, spawnSnow) end
   if splash.n < budget.splash then grow(splash, budget.splash, spawnSplash) end
   if wetGround.n < math.max(64, (budget.splash or 40) * 3) then
     grow(wetGround, math.max(64, (budget.splash or 40) * 3), function(i)
@@ -373,7 +373,8 @@ function P.update(dt, ch, budget, wind, camX, camY, splashesOn)
   if grain.n < budget.grain then grow(grain, budget.grain, spawnGrain) end
 
   rain.active = math.min(rain.n, math.floor(budget.rain * math.min(3.0, (ch.rain or 0)) + 0.5))
-  snow.active = math.min(snow.n, math.floor(budget.snow * math.min(3.0, (ch.snow or 0)) + 0.5))
+  -- Retain the pool for immediate 2D resume, without ticking hidden flakes.
+  snow.active = snowHidden and 0 or math.min(snow.n, math.floor(budget.snow * math.min(3.0, (ch.snow or 0)) + 0.5))
   grain.active = math.min(grain.n, math.floor(budget.grain * math.min(2.5, kindTotal) + 0.5))
 
   -- ------- rain

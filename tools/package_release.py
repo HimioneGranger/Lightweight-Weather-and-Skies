@@ -21,6 +21,7 @@ ROOT_FILES = {
     "weather_main.lua",
     "release-review/AUDIO-SOURCES.json",
     "release-review/AUDIO-PROVENANCE.json",
+    "release-review/GEN3-INTEGRATION-1.2.0.md",
 }
 ROOT_DIRS = ("assets", "bootstrap", "compat", "lib", "media")
 ZIP_TIME = (2026, 9, 12, 0, 0, 0)
@@ -77,10 +78,12 @@ def main() -> int:
         "version": version,
         "sha256": sha256(archive),
         "fileCount": len(files),
-        "status": "PENDING EXACT-ARTIFACT AUDIT",
+        "status": "UNRELEASED CANDIDATE; GEN3 QUALIFICATION AND EXACT-ARTIFACT AUDIT PENDING",
         "openChecks": [
-            "1.1.0 lightning has automated and isolated desktop GPU checks, not a fresh full-game/headset performance pass",
-            "prior 1.0 Gen 1 acceptance is historical; Gen 2 remains beta and non-VR Android alpha; Gen 3 is not a supported game in this ZIP",
+            "1.2.0 exact-candidate FireRed and Emerald desktop/native and headset qualification is required",
+            "Gen1/2 regression checks remain required; prior acceptance is not this candidate's acceptance",
+            "sun/moon synchronized shadows require matching host-renderer integration, not just this weather ZIP",
+            "dust visibility, slower firefly glow and new snow-only frost still need fresh exact-candidate visual checks",
             "showcase controls intentionally leave some manual weather selected; return WEATHER to AUTO is documented",
             "permission is owner-reported and credited, without a blanket upstream license claim",
             "this generated ZIP still needs an exact-artifact inventory, provenance, naming and media audit before publication",

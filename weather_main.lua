@@ -350,7 +350,7 @@ end
 local drewThisFrame = false
 
 -- A full-frame weather pass becomes paint on the floating Game Boy panel in
--- Quest VR. The standalone adapter has a deliberately small voxel bridge, so the
+-- Quest VR. The private build has a deliberately small voxel bridge, so the
 -- overworld compositor must stay clean even if that bridge fails. This makes
 -- rendering failures obvious instead of silently putting rain back on the UI.
 local function questVrWorld()
@@ -443,7 +443,7 @@ mod.content.render_pipelines:register("weather", {
     Draw.update(dt, level)
     -- Drive the optional 3D atmosphere from the same weather state so the
     -- two paths cannot disagree. No-op stub when the bridge is inactive.
-    -- Desktop and the ordinary Gen 1 host are driven here. The standalone
+    -- Desktop and the ordinary Gen 1 host are driven here.  The private
     -- Quest bridge is pumped from input.step below because Gen 2 does not
     -- invoke a level-0 render pipeline's update callback.
     if not V.questLitePrivate then
@@ -502,6 +502,10 @@ mod.content.render_pipelines:register("weather", {
   end,
 
   invalidate = function()
+    do -- Lab 52: pending frame-batched dt is applied before the state is thrown away
+      local perfT = mod.exports and mod.exports.questPerf
+      if type(perfT) == "table" and perfT.fo then perfT.fo.flush() end
+    end
     Draw.invalidate()
     Audio.invalidate()
     BattleDraw.reset()
@@ -517,19 +521,32 @@ mod.content.render_pipelines:register("weather", {
 -- world-space bridge from ever discovering Battle Art or wrapping Gen 2's
 -- live Sky.paint function.  input.step is the engine's fixed lifecycle seam
 -- on both standalone generations and runs independently of render ladders.
--- Only the standalone Quest adapter uses this path; weather state/frequencies stay
+-- Only the private Quest build uses this path; weather state/frequencies stay
 -- owned by State.update in the pipeline once the ladder is enabled.
 if V.questLitePrivate then
   local reportedAtmosReason
-  mod.hooks:wrap("input.step", function(next, game, dt)
-    local result = next(game, dt)
+  -- Lab 52 (exports.setFrameOnce, default OFF): with the switch on this runs once per rendered frame with the summed dt
+  -- (compat/FrameOnce.lua flush, last in the sequence). `last` is the final tick's dt: the precipitation step in
+  -- DramalessAtmos uses the last tick's dt once per frame, and keeps doing so.
+  local perfT = mod.exports and mod.exports.questPerf
+  local FO = type(perfT) == "table" and perfT.fo or nil
+  local fperf = FO and perfT or {}
+  local take = FO and FO.take
+  local function runAtmos(dt, last)
     VoxelAtmos.syncFromWeatherFx(State, Settings)
-    VoxelAtmos.update(dt)
+    VoxelAtmos.update(dt, last)
     local reason = tostring(VoxelAtmos.reason())
     if reason ~= reportedAtmosReason then
       reportedAtmosReason = reason
       pcall(mod.log.info, mod.log, "Quest world weather bridge: %s", reason)
     end
+  end
+  local stage = FO and FO.stage("atmos", 50, runAtmos) or { n = 0 }
+  mod.hooks:wrap("input.step", function(next, game, dt)
+    local result = next(game, dt)
+    local go, d, last = true, dt, nil
+    if fperf.frameOnce or stage.n ~= 0 then go, d, last = take(stage, dt) end
+    if go then runAtmos(d, last) end
     return result
   end, -900)
 end
@@ -935,7 +952,7 @@ mod.events:on("game.ready", function()
     pcall(WeatherCompanionBridge.install)
   end)
 
-  -- The standalone Quest adapter uses NightSky.drawWorld and CelestialBodies.drawWorld
+  -- The private build uses NightSky.drawWorld and CelestialBodies.drawWorld
   -- directly inside DramalessAtmos. The legacy screen-space wrapper allocates
   -- a fresh night palette every eye and paints bodies onto a flat plate, so it
   -- remains disabled in VR.

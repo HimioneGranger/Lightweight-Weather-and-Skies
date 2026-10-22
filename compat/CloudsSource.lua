@@ -511,7 +511,59 @@ end
 -- The sheet is snapped to the eye in whole tiles and slid by the drift, so
 -- the pattern under any point of the world is the same from every eye and
 -- every frame -- the two eyes see one deck.
+--
+-- Clouds.hoist (set by the Gen2 transport from the mod's frame-hoist switch)
+-- selects the allocation-free path below: the same calls with the same
+-- values, but the haze closure and the per-eye deck-parameter table are
+-- replaced by a predefined function and one table refreshed in place.
+local hazeOut
+local function readHaze() hazeOut = V.require("Sky").haze() end
+local deckParams = {}
+local function drawHoisted(eye)
+  local img, m = Clouds.image(), Clouds.mesh()
+  if not (img and m and eye) then return false end
+  local tile = Clouds.TILE
+  local off = Clouds.driftPx()
+  local sx,sz = cloudSpace:placement(eye,tile,off)
+  local model = Mat4.translate(sx, Clouds.ALT, sz)
+  hazeOut = nil
+  pcall(readHaze)
+  local haze = hazeOut
+  hazeOut = nil
+  Voxel3D.glass(false)
+  Voxel3D.seams(false)
+  local phase, warp, shapeA, shapeB = Clouds.morph()
+  local weather = weatherVisuals
+  local p = deckParams
+  p.phase = phase
+  p.warp = warp
+  p.shapeA = shapeA
+  p.shapeB = shapeB
+  p.density = Clouds.MORPH_DENSITY
+  p.coverage = weather.coverage
+  p.softness = Clouds.SOFTNESS
+  p.steps = Clouds.STEPS
+  p.color = weather.color
+  p.light = cloudLight
+  p.opacity = weather.opacity
+  p.overcast = weather.stormMix
+  -- (assigning nil to a key the table does not hold would re-insert the key and
+  -- can force a rehash every call, so only write when the value differs)
+  local lightning = Clouds.lightningProvider and Clouds.lightningProvider()
+  if p.lightning ~= lightning then p.lightning = lightning end
+  local front = Clouds.stormFrontProvider and Clouds.stormFrontProvider()
+  if p.stormFront ~= front then p.stormFront = front end
+  Voxel3D.skyDeck(true, Clouds.FOG_DENSITY, Clouds.FOG_START, haze,
+                  Clouds.ALPHA_CUT, p)
+  Voxel3D.draw(m, img, model)
+  Voxel3D.skyDeck(false)
+  Voxel3D.seams(true)
+  Voxel3D.glass(true)
+  return true
+end
+
 function Clouds.draw(eye)
+  if Clouds.hoist then return drawHoisted(eye) end
   local img, m = Clouds.image(), Clouds.mesh()
   if not (img and m and eye) then return false end
   local tile = Clouds.TILE
