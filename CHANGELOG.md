@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 — Weather refinement (unreleased candidate)
+## 1.2.0 — Gen3 support and weather refinement (2026-10-22)
 
 - Rain appearance/downward-motion and bounded geometry/buffer improvements.
 - Snow rendering improvements and sparse snow-only ground frost.
@@ -14,7 +14,11 @@
   where supported, and dawn/dusk star fades. Older hosts retain native RTC when
   the optional lighting-preview module is absent.
 - Preserve fixed sun/moon heading controls used by matching baked-shadow hosts.
-- Gen3 FireRed/Emerald testing is the release gate, not a completed support claim.
+- Gen3 adapters for compatible FireRed/LeafGreen and Emerald hosts; keep matching
+  renderer/bridge integrations installed. The ZIP does not supply a complete host.
+- Owner-reported successful Quest 2 testing and publication approval. Automated
+  fixtures, historical native checks and user testing are distinct evidence;
+  complete exact-source per-host/frame-pacing qualification is not claimed.
 - Puddles/ripples and god rays are excluded. No measured headset FPS gain claimed.
 
 ## 1.1.0 — Lightning variety update

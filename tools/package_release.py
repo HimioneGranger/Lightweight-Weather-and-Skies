@@ -78,10 +78,10 @@ def main() -> int:
         "version": version,
         "sha256": sha256(archive),
         "fileCount": len(files),
-        "status": "UNRELEASED CANDIDATE; GEN3 QUALIFICATION AND EXACT-ARTIFACT AUDIT PENDING",
+        "status": "PACKAGE CREATED; EXACT-ARTIFACT AUDIT AND PUBLICATION READBACK REQUIRED",
         "openChecks": [
-            "1.2.0 exact-candidate FireRed and Emerald desktop/native and headset qualification is required",
-            "Gen1/2 regression checks remain required; prior acceptance is not this candidate's acceptance",
+            "owner reports successful Quest2 testing and approved publication2026-10-22; this is not a benchmark or exhaustive exact-source host qualification",
+            "Gen1/2 source regressions are separate from physical headset testing",
             "sun/moon synchronized shadows require matching host-renderer integration, not just this weather ZIP",
             "dust visibility, slower firefly glow and new snow-only frost still need fresh exact-candidate visual checks",
             "showcase controls intentionally leave some manual weather selected; return WEATHER to AUTO is documented",

@@ -51,9 +51,11 @@ native-clock/menu behavior with and without the optional preview module. Gen1/2,
 PC packet sky, existing lightning and shared rain-speed regressions also pass.
 
 The October 8 Weather Lab2 native/GLES checks are historical evidence for that
-earlier exact payload, not acceptance of the newly merged shared source. Fresh
-full-feature FireRed/Emerald native rendering, visual review and headset stereo /
-frame-pacing acceptance remain pending. A PR is not a published release; no
-qualification gate is marked passed merely because this source is committed.
+earlier exact payload, not acceptance of every newly merged source path. On
+October 22, 2026 the owner reported that FRLFG Lab / FireRed build 3217 worked on Quest 2 and
+explicitly approved publishing 1.2.0. Record that as owner-reported testing, not
+an automated benchmark or universal hardware certification. Exhaustive fresh
+exact-source per-host rendering and frame-pacing qualification remains open;
+publication does not convert unrun checks into passed checks.
 
 Puddles and god rays remain excluded. No measured headset FPS gain is claimed.

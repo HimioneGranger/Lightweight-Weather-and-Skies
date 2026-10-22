@@ -2,7 +2,7 @@
 
 Moving clouds, changing weather, and a sky worth stopping to look at. Storms travel across the map; the sky shifts through day and night; rain, snow, lightning, auroras and meteors give you reasons to look up.
 
-**1.2.0 release candidate:** Rain/snow rendering improvements, snow-only ground frost, sand/dust, contextual softer fireflies and revised celestial rendering are joined by the newer FireRed/Emerald lab performance and menu fixes. Gen1/2 and source tests are recorded separately from native/headset acceptance. Synchronized shadows require matching host-renderer integration. Puddles and god rays are excluded. No new headset FPS claim is made; historical 1.1.0 compatibility notes are not acceptance of this candidate. See [the 1.2 integration notes](release-review/GEN3-INTEGRATION-1.2.0.md) for host requirements and pending release checks.
+**1.2.0 — Gen3 weather support:** Rain/snow rendering improvements, snow-only ground frost, sand/dust, contextual softer fireflies and revised celestial rendering are joined by the newer FireRed/Emerald lab performance and menu fixes. The owner reports successful Quest 2 testing in FRLFG Lab / FireRed build 3217 and approved publication on October 22, 2026. This is a user test report, not a benchmark or certification of every host/device. Gen3 requires the compatible renderer/bridge; synchronized shadows need matching host integration. Puddles and god rays are excluded. See [the 1.2 integration notes](release-review/GEN3-INTEGRATION-1.2.0.md) for requirements and verification limits.
 
 Built for **Battle Art on Gen1Recomp**, with Gen2Recomp support in beta. One LWS ZIP routes to PC, standalone Quest, or alpha non-VR Android as appropriate; Battle Art and the Quest bridge are separate installs.
 
