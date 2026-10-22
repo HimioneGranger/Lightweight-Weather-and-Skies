@@ -89,12 +89,12 @@ function Bridge.syncFromWeatherFx(state, settings)
   end
 end
 
-function Bridge.update(dt)
+function Bridge.update(dt, last)
   if not Bridge.active() then
     Bridge.init()
   end
   if Bridge._impl and Bridge._impl.update then
-    pcall(Bridge._impl.update, dt)
+    pcall(Bridge._impl.update, dt, last)
   end
 end
 

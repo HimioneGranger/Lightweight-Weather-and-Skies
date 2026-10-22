@@ -77,6 +77,16 @@ local PI2 = math.pi * 2
 
 local WP = {}
 local DesktopWeatherProfile = V.require('DesktopWeatherProfile')
+-- Keep the internal buffer alias for existing call sites; the helper is now
+-- shared by all Quest generations. Non-private Gen1/2 retain their old path.
+local Gen3Buffers = V.mod and (V.questLitePrivate or V.mod.generation == 3) and assert(load(V.mod:read('lib/voxel_atmos/PrecipBuffers.lua'), '@PrecipBuffers.lua'))(V)
+local PrecipVisuals = V.questLitePrivate and V.mod and assert(load(V.mod:read('lib/voxel_atmos/PrecipVisuals.lua'), '@PrecipVisuals.lua'))()
+local Fireflies = V.questLitePrivate and Gen3Buffers and assert(load(V.mod:read('lib/voxel_atmos/Fireflies.lua'), '@Fireflies.lua'))(V,Gen3Buffers)
+local SandDust = V.questLitePrivate and Gen3Buffers and assert(load(V.mod:read('lib/voxel_atmos/SandDust.lua'), '@SandDust.lua'))(V,Gen3Buffers)
+local GroundWeather = V.questLitePrivate and Gen3Buffers and assert(load(V.mod:read('lib/voxel_atmos/SnowGround.lua'), '@SnowGround.lua'))(V,Gen3Buffers)
+local function newPrecipShader(source)
+  return love.graphics.newShader(PrecipVisuals and PrecipVisuals.shader(source) or source)
+end
 
 -- ---------------------------------------------------------------------------
 -- TUNABLES
@@ -99,7 +109,7 @@ local TILE = 16
 -- is derived from the rendered area (see SNOW_PER_TILE) and clamped here.
 local SNOW_MAX = 9000
 
--- Standalone Quest contract: these are hard ceilings, not merely quality
+-- Private Quest contract: these are hard ceilings, not merely quality
 -- suggestions. The 2D particle budgets and the true 3D pools now agree.
 if V.questLitePrivate then
   RAIN_MAX = 90
@@ -576,7 +586,14 @@ local function qualityScale()
   -- Counts are already capped above. Scaling them down again would turn the
   -- light profiles into a few isolated streaks and make the three rain levels
   -- indistinguishable.
-  if V.questLitePrivate then return 1.0 end
+  if V.questLitePrivate then
+    -- Runtime-only LITE weather tier (exports.setQuestWeatherTier): fewer
+    -- rain drops and snow flakes, drawn on every eye. FULL and OFF keep 1.0.
+    local e = V.mod and V.mod.exports
+    local p = type(e) == "table" and e.questPerf or nil
+    if type(p) == "table" and p.tier == "lite" then return 0.6 end
+    return 1.0
+  end
   if simTime - qAt < 1.0 then return qScale end
   qAt = simTime
   pcall(function()
@@ -611,6 +628,10 @@ function WP.rainSurface(weather,x,z,legacy)
   return y
 end
 function WP.update(dt, focus, weather)
+  if Gen3Buffers then Gen3Buffers.step() end
+  if Fireflies then Fireflies.update(dt,focus,weather) end
+  if SandDust then SandDust.update(dt,focus,weather) end
+  if GroundWeather then GroundWeather.update(dt,focus,weather) end
   if not focus then return end
   dt = tonumber(dt) or 0
   if dt < 0 then dt = 0 end
@@ -657,6 +678,7 @@ function WP.update(dt, focus, weather)
     if V.questLitePrivate and weather and weather.wxId=='STORM' then rainBudget=120 end
     local budgetKey = weather and weather.wxId == 'STORM' and 'stormRainMax' or 'rainMax'
     rainBudget = floor(DesktopWeatherProfile.value(desktopProfile, budgetKey, rainBudget, 2000))
+    if Gen3Buffers and V.mod.generation == 3 then rainBudget = Gen3Buffers.cap(rainBudget, weather and weather.wxId) end
     wantRain = min(rainBudget, floor(rainBudget * min(1.5, rainI) * 0.85 * q + 0.5))
   end
 
@@ -676,6 +698,8 @@ function WP.update(dt, focus, weather)
     local tiles = (math.pi * SNOW_STREAM_RADIUS * SNOW_STREAM_RADIUS) / (TILE * TILE)
     local want = SNOW_PER_TILE * tiles * min(1.0, snowI / 1.9) * q
     local snowBudget = floor(DesktopWeatherProfile.value(desktopProfile, 'snowMax', SNOW_MAX, 9000))
+    -- LITE weather tier: the hard flake cap scales too (q is 1.0 in every other tier)
+    if q < 1 then snowBudget = floor(snowBudget * q + 0.5) end
     wantSnow = min(snowBudget, floor(want + 0.5))
   end
 
@@ -703,7 +727,9 @@ function WP.update(dt, focus, weather)
     rvy[i] = rvy[i] - (18 + (rseed[i] or 0) * 8) * dt
     local surface=WP.rainSurface(weather,rx[i],rz[i],py-2)
     if surface and ry[i] < surface then
-      addWetMark(rx[i], V.questLitePrivate and surface+0.05 or py-1.2, rz[i], 0.35 + random() * 0.45)
+      if not V.questLitePrivate then
+        addWetMark(rx[i],py-1.2,rz[i],0.35+random()*0.45)
+      end
       spawnRainAt(i, px, py, pz, rainI, windX, windZ)
     elseif rlife[i] >= rmax[i] or far(rx[i], rz[i], px, pz) then
       spawnRainAt(i, px, py, pz, rainI, windX, windZ)
@@ -923,6 +949,7 @@ local meshCap = {}
 local prefixUpload = nil   -- nil = untested, true/false = known
 
 local function uploadMesh(mesh, fmt, buf)
+  if Gen3Buffers then return Gen3Buffers.upload(mesh, fmt, buf) end
   local n = buf.n
   if n < 3 then return nil end
   local cap = (mesh and meshCap[mesh]) or 0
@@ -970,7 +997,7 @@ local function getRainShader()
     rainShader = false
     return nil
   end
-  local ok, sh = pcall(love.graphics.newShader, [[
+  local ok, sh = pcall(newPrecipShader, [[
 #ifdef VERTEX
   extern mat4 vp;
   attribute vec4 RainTint;
@@ -1036,7 +1063,7 @@ local function getGrainShader()
     grainShader = false
     return nil
   end
-  local ok, sh = pcall(love.graphics.newShader, [[
+  local ok, sh = pcall(newPrecipShader, [[
 #ifdef VERTEX
   extern mat4 vp;
   attribute vec4 RainTint;
@@ -1077,6 +1104,7 @@ local function getGrainShader()
 end
 
 local function beginPass(Voxel3D, sh)
+  if Gen3Buffers then return Gen3Buffers.beginPass(Voxel3D, sh) end
   pcall(love.graphics.setBlendMode, "alpha", "alphamultiply")
   pcall(love.graphics.setDepthMode, "lequal", false)
   local began = false
@@ -1098,15 +1126,20 @@ end
 -- DRAW: RAIN STREAKS (geometry unchanged)
 -- ---------------------------------------------------------------------------
 local function drawRainStreaks(Voxel3D)
+  if Gen3Buffers then
+    local cached,n=Gen3Buffers.cachedDraw(rainBuf,rain.active or 0,Voxel3D,getRainShader,beginPass,endPass)
+    if cached then drawnRainVerts=n or 0; return end
+  end
   local active = rain.active or 0
   if active <= 0 or not (Voxel3D and Voxel3D.vp) then
     drawnRainVerts = 0
     return
   end
-  local eye = Voxel3D.eye or { 0, 0, 0 }
+  local eye = Voxel3D.eye or (Gen3Buffers and Gen3Buffers.zeroEye) or { 0, 0, 0 }
   local ex, ey, ez = eye[1] or 0, eye[2] or 0, eye[3] or 0
   local buf = rainBuf
   buf:reset()
+  if Gen3Buffers then Gen3Buffers.prepareCull(Voxel3D.vp,rainBuf) end
 
   local ax, ay, az = rain.x, rain.y, rain.z
   local avx, avy, avz = rain.vx, rain.vy, rain.vz
@@ -1121,8 +1154,13 @@ local function drawRainStreaks(Voxel3D)
     if lifeT < 0.08 then a = a * (lifeT / 0.08) end
     if lifeT > 0.85 then a = a * (1 - (lifeT - 0.85) / 0.15) end
     local tx, ty, tz = ex - x, ey - y, ez - z
-    local tl = sqrt(tx * tx + ty * ty + tz * tz)
-    if tl >= 1e-3 then
+    local tl2 = tx * tx + ty * ty + tz * tz
+    -- A conservative sphere encloses the longest near-field streak and its
+    -- half-width (raw size *1.75 *(1.4+.12) < raw size *2.7).
+    -- Use the sum: streak velocity and camera-facing width need not be orthogonal.
+    -- Cull geometry only: offscreen rain still falls/lands in the shared sim.
+    if tl2 >= 1e-6 and (not Gen3Buffers or Gen3Buffers.visibleSphere(x,y,z,size*2.7)) then
+      local tl = sqrt(tl2)
       local near = 1.0 - min(1.0, tl / DEPTH)
       size = size * (0.40 + near * 1.35)
       a = a * (0.35 + near * 0.65)
@@ -1138,12 +1176,23 @@ local function drawRainStreaks(Voxel3D)
       local hx, hy, hz = x - vx * len * 0.5, y - vy * len * 0.5, z - vz * len * 0.5
       local tx2, ty2, tz2 = x + vx * len * 0.5, y + vy * len * 0.5, z + vz * len * 0.5
       local hrx, hrz = rx * half, rz * half
-      buf:push(hx - hrx, hy, hz - hrz, a, a, a, a)
-      buf:push(hx + hrx, hy, hz + hrz, a, a, a, a)
-      buf:push(tx2 + hrx, ty2, tz2 + hrz, a, a, a, a)
-      buf:push(hx - hrx, hy, hz - hrz, a, a, a, a)
-      buf:push(tx2 + hrx, ty2, tz2 + hrz, a, a, a, a)
-      buf:push(tx2 - hrx, ty2, tz2 - hrz, a, a, a, a)
+      if PrecipVisuals then
+        local tag=-1-floor((rain.seed[i] or 0)*3)
+        local push=PrecipVisuals.pushRain
+        push(buf,hx-hrx,hy,hz-hrz,a,0,0,tag)
+        push(buf,hx+hrx,hy,hz+hrz,a,1,0,tag)
+        push(buf,tx2+hrx,ty2,tz2+hrz,a,1,1,tag)
+        push(buf,hx-hrx,hy,hz-hrz,a,0,0,tag)
+        push(buf,tx2+hrx,ty2,tz2+hrz,a,1,1,tag)
+        push(buf,tx2-hrx,ty2,tz2-hrz,a,0,1,tag)
+      else
+        buf:push(hx-hrx,hy,hz-hrz,a,a,a,a)
+        buf:push(hx+hrx,hy,hz+hrz,a,a,a,a)
+        buf:push(tx2+hrx,ty2,tz2+hrz,a,a,a,a)
+        buf:push(hx-hrx,hy,hz-hrz,a,a,a,a)
+        buf:push(tx2+hrx,ty2,tz2+hrz,a,a,a,a)
+        buf:push(tx2-hrx,ty2,tz2-hrz,a,a,a,a)
+      end
     end
   end
 
@@ -1168,8 +1217,12 @@ end
 -- attribute would mean a second format and a second mesh for no gain.
 local function drawSnowFlakes(Voxel3D)
   local active = snow.active or 0
-  if active <= 0 or not (Voxel3D and Voxel3D.vp) then return end
-  local eye = Voxel3D.eye or { 0, 0, 0 }
+  if active <= 0 or not (Voxel3D and Voxel3D.vp) then drawnSnowVerts=0; return end
+  if Gen3Buffers then
+    local cached,n=Gen3Buffers.cachedDraw(snowBuf,active,Voxel3D,getSnowShader,beginPass,endPass)
+    if cached then drawnSnowVerts=n or 0; return end
+  end
+  local eye = Voxel3D.eye or (Gen3Buffers and Gen3Buffers.zeroEye) or { 0, 0, 0 }
   local ex, ey, ez = eye[1] or 0, eye[2] or 0, eye[3] or 0
   local buf = snowBuf
   buf:reset()
@@ -1179,6 +1232,7 @@ local function drawSnowFlakes(Voxel3D)
   local arot, abr = snow.rot, snow.br
   local DEPTH = SNOW_DRAW_RADIUS * 1.15
   local CULL2 = SNOW_DRAW_RADIUS * SNOW_DRAW_RADIUS
+  if Gen3Buffers then Gen3Buffers.prepareCull(Voxel3D.vp,snowBuf) end
 
   for i = 1, active do
     local x, y, z = ax[i], ay[i], az[i]
@@ -1186,7 +1240,7 @@ local function drawSnowFlakes(Voxel3D)
     local t2 = tx * tx + ty * ty + tz * tz
     -- Cull the vertex build only. The particle keeps integrating; it simply is
     -- not worth six vertices at a range where it covers no pixels.
-    if t2 < CULL2 and t2 > 1e-6 then
+    if t2 < CULL2 and t2 > 1e-6 and (not Gen3Buffers or Gen3Buffers.visibleSphere(x,y,z,asize[i]*2)) then
       local size = asize[i]
       local a = aa[i]
       local lifeT = alife[i] / max(0.05, amax[i])
@@ -1313,10 +1367,12 @@ end
 -- DRAW: GROUND LAYERS
 -- ---------------------------------------------------------------------------
 local function drawWetMarks(Voxel3D)
+  if Gen3Buffers and Gen3Buffers.cachedDraw(wetBuf, wet.active or 0, Voxel3D, getRainShader, beginPass, endPass, true) then return end
   local active = wet.active or 0
   if active <= 0 or not (Voxel3D and Voxel3D.vp) then return end
   local buf = wetBuf
   buf:reset()
+  if Gen3Buffers then Gen3Buffers.prepareCull(Voxel3D.vp,wetBuf) end
   for i = 1, active do
     local age = wet.age[i] or 99
     if age < WET_LIFE then
@@ -1327,6 +1383,7 @@ local function drawWetMarks(Voxel3D)
       if a > 0.02 then
         local x, y, z = wet.x[i], wet.y[i], wet.z[i]
         local r = wet.size[i] * (0.55 + t * 0.15)
+        if not Gen3Buffers or Gen3Buffers.visibleSphere(x,y,z,r*1.415) then
         -- Flat quad on ground (world XZ)
         buf:push(x - r, y, z - r, a, a, a, a)
         buf:push(x + r, y, z - r, a, a, a, a)
@@ -1334,6 +1391,7 @@ local function drawWetMarks(Voxel3D)
         buf:push(x - r, y, z - r, a, a, a, a)
         buf:push(x + r, y, z + r, a, a, a, a)
         buf:push(x - r, y, z + r, a, a, a, a)
+        end
       end
     end
   end
@@ -1351,6 +1409,7 @@ end
 -- hardcodes a blue-grey pixel colour and would have painted every drift the
 -- colour of a puddle. The grain shader passes the per-vertex tint through.
 local function drawGroundSnow(Voxel3D)
+  if Gen3Buffers and Gen3Buffers.cachedDraw(gsnowBuf,gsnow.active or 0,Voxel3D,getGrainShader,beginPass,endPass) then return end
   local active = gsnow.active or 0
   if active <= 0 or not (Voxel3D and Voxel3D.vp) then return end
   local buf = gsnowBuf
@@ -1378,16 +1437,17 @@ local function drawGroundSnow(Voxel3D)
 end
 
 local function drawGrains(Voxel3D)
+  if Gen3Buffers and Gen3Buffers.cachedDraw(grainBuf, grain.active or 0, Voxel3D, getGrainShader, beginPass, endPass) then return end
   local active = grain.active or 0
   if active <= 0 or not (Voxel3D and Voxel3D.vp) then return end
-  local eye = Voxel3D.eye or { 0, 0, 0 }
+  local eye = Voxel3D.eye or (Gen3Buffers and Gen3Buffers.zeroEye) or { 0, 0, 0 }
   local ex, ey, ez = eye[1] or 0, eye[2] or 0, eye[3] or 0
   local buf = grainBuf
   buf:reset()
   local DEPTH = STREAM_RADIUS * 1.15
   -- Read the user's seasonal tint once, not once per airborne leaf.
   local leafColor="green"
-  pcall(function()local s=V.require('Settings');if s and s.leafColor then leafColor=s.leafColor() or 'green' end end)
+  if Gen3Buffers then leafColor=Gen3Buffers.leafColor() else pcall(function()local s=V.require('Settings');if s and s.leafColor then leafColor=s.leafColor() or 'green' end end) end
   for i = 1, active do
     local x, y, z = grain.x[i], grain.y[i], grain.z[i]
     local size, a = grain.size[i], grain.a[i]
@@ -1421,6 +1481,7 @@ local function drawGrains(Voxel3D)
       local upx,upy,upz=0,hs,0
       local hy=0
       local variant=0
+      if PrecipVisuals and kind==2 then variant=(grain.seed[i] or 0)<0.25 and -2 or -1 end
       if kind==3 then
         local seed=grain.seed[i] or 0
         local angle=seed*PI2+simTime*(0.7+(grain.spin[i] or 0)*1.3)
@@ -1471,7 +1532,13 @@ function WP.draw(Voxel3D, frame)
   local ashI = tonumber(weather and weather.ashIntensity) or 0
   local debrisI = tonumber(weather and weather.debrisIntensity) or 0
 
-  drawWetMarks(Voxel3D)
+  if GroundWeather and GroundWeather.available() then
+    GroundWeather.draw(Voxel3D,beginPass,endPass)
+  elseif not V.questLitePrivate then
+    -- The 1.2 private weather path excludes puddles and rain ground marks.
+    drawWetMarks(Voxel3D)
+  end
+  if Fireflies then Fireflies.draw(Voxel3D,beginPass,endPass) end
   drawGroundSnow(Voxel3D)
   if rainI > 0.02 then
     drawRainStreaks(Voxel3D)
@@ -1491,9 +1558,14 @@ function WP.draw(Voxel3D, frame)
   if sandI > 0.02 or ashI > 0.02 or debrisI > 0.02 then
     drawGrains(Voxel3D)
   end
+  if SandDust then SandDust.draw(Voxel3D,beginPass,endPass) end
 end
 
 function WP.invalidate()
+  if Gen3Buffers then Gen3Buffers.invalidate() end
+  if Fireflies then Fireflies.invalidate() end
+  if SandDust then SandDust.invalidate() end
+  if GroundWeather then GroundWeather.invalidate() end
   rainMesh, snowMesh, wetMesh, grainMesh, gsnowMesh, faceMesh = nil, nil, nil, nil, nil, nil
   rainShader, snowShader, grainShader = nil, nil, nil
   rain.active, snow.active, grain.active = 0, 0, 0
@@ -1507,6 +1579,20 @@ function WP.invalidate()
   drawnSnowVerts, drawnRainVerts = 0, 0
   snowLanded, snowExpiredAir = 0, 0
   snowDeepest = 0
+end
+
+if Gen3Buffers then
+  function WP.precipBufferStats() return Gen3Buffers.stats end
+  if V.mod.generation == 3 then WP.gen3BufferStats=WP.precipBufferStats end
+end
+function WP.sandDustStatus()
+  if not SandDust then return {active=0} end
+  return {active=SandDust.active,vertices=SandDust.stats.vertices,
+    draws=SandDust.stats.draws,surfaceCalls=SandDust.stats.surfaceCalls,error=SandDust.error}
+end
+function WP.groundWeatherStatus()
+  if not GroundWeather then return {enabled=false,available=false} end
+  return GroundWeather.status()
 end
 
 function WP.describe()
@@ -1640,6 +1726,7 @@ end
 --- Live tuning hook. The snow numbers live here rather than baked in because
 --- none of them can be validated without a human looking at the screen.
 function WP.tune(t)
+  if Gen3Buffers then Gen3Buffers.changed() end
   if type(t) ~= "table" then return false end
   if tonumber(t.radius) then
     -- An explicit radius pins the volume: clear the tracked far plane, or the

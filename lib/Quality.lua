@@ -159,6 +159,13 @@ local scaled = { rain = 0, snow = 0, grain = 0, splash = 0, fogLayers = 1, bolt 
 function Quality.celestial()
   if V.questLitePrivate then
     -- Keep precipitation light; do not silently decimate the sky catalog.
+    -- Runtime-only LITE weather tier (exports.setQuestWeatherTier): every
+    -- third star and no meteors (plus the once-per-frame star build in NightSky).
+    local e = V.mod and V.mod.exports
+    local p = type(e) == "table" and e.questPerf or nil
+    if type(p) == "table" and p.tier == "lite" then
+      return { starStep=3, maxPlanets=5, twinkle=true, sunLayers=4, meteors=false }
+    end
     return { starStep=1, maxPlanets=5, twinkle=true, sunLayers=4, meteors=true }
   end
   local tier = Quality.TIERS[Quality.tier()] or Quality.TIERS.medium

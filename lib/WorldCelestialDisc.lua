@@ -93,6 +93,8 @@ end
 local Disc = { source = "The World 6.70.27 weather_main.lua::wxPaintCelestialDisc" }
 local images, meshes = {}, {}
 local shader
+local sunStatus={coreAngularDeg=2,haloDeg=4.5,drawPasses=0,dx=0,dy=0,dz=0,eyeX=0,eyeY=0,eyeZ=0}
+Disc.sunStatus=sunStatus -- retained native-capture diagnostics, Gen 3 clean sun only
 local FORMAT = {
   { "VertexPosition", "float", 3 },
   { "VertexTexCoord", "float", 2 },
@@ -106,8 +108,23 @@ vec4 position(mat4 transform_projection, vec4 vertex_position) {
 #endif
 #ifdef PIXEL
 uniform bool isMoon;
+uniform bool cleanSun;
+uniform float sunAltitude;
 uniform vec3 moonLight;
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+  // Gen 3 sun only: a flat luminous disc, not a shaded sphere or pixel ball.
+  if (cleanSun && !isMoon) {
+    float r=length(tc*2.0-1.0);
+    float core=1.0-smoothstep(0.436,0.452,r);
+    float halo=0.11*(1.0-smoothstep(0.44,1.0,r));
+    halo*=halo/0.11;
+    float warm=1.0-smoothstep(0.02,0.25,sunAltitude);
+    vec3 coreColor=mix(vec3(1.0,0.975,0.89),vec3(1.0,0.82,0.56),warm);
+    vec3 haloColor=mix(vec3(1.0,0.86,0.60),vec3(1.0,0.66,0.34),warm);
+    float opacity=max(core,halo)*color.a;
+    if (opacity<0.001) discard;
+    return vec4(mix(haloColor,coreColor,core),opacity);
+  }
   vec4 texelColor = Texel(tex, tc) * color;
   if (texelColor.a < 0.01) discard;
   if (isMoon) {
@@ -127,9 +144,16 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 
 -- Record the upstream painter's exact pixel cells into ImageData once.
 -- Baking never binds/clears a Canvas inside an active stereo eye.
-function Disc.image(moon)
-  local key = moon and "moon" or "sun"
+function Disc.image(moon, cleanSun)
+  local key = moon and "moon" or (cleanSun and "cleanSun" or "sun")
   if images[key] then return images[key] end
+  if cleanSun and not moon then
+    local data=hostLove.image.newImageData(1,1)
+    data:setPixel(0,0,1,1,1,1)
+    local texture=hostLove.graphics.newImage(data)
+    texture:setFilter('linear','linear');texture:setWrap('clamp','clamp')
+    images[key]=texture;return texture
+  end
   if moon then
     local texture=hostLove.graphics.newImage(V.require('QuestMoon').imageData(hostLove.image))
     texture:setFilter('linear','linear');texture:setWrap('clamp','clamp')
@@ -180,6 +204,29 @@ function Disc.axes(body)
   return {rx,ry,rz}, {y*rz-z*ry,z*rx-x*rz,x*ry-y*rx}
 end
 
+-- Retained sun vertices/UVs; no frame-time vertex tables or camera billboarding.
+local sunVertices={{0,0,0,0,0},{0,0,0,1,0},{0,0,0,1,1},
+  {0,0,0,0,0},{0,0,0,1,1},{0,0,0,0,1}}
+local sunSigns={{-1,1},{1,1},{1,-1},{-1,1},{1,-1},{-1,-1}}
+local SUN_HALF_ANGLE=math.tan(math.rad(2.25)) -- 4.5 degree halo, 2 degree core
+local function cleanSunVertices(body,origin,radius)
+  local nx,ny,nz=body.dx,body.dy,body.dz
+  local length=math.sqrt(nx*nx+ny*ny+nz*nz)
+  nx,ny,nz=nx/length,ny/length,nz/length
+  local rx,ry,rz=ny,-nx,0
+  local size=math.sqrt(rx*rx+ry*ry)
+  if size<0.000001 then rx,ry,rz,size=nz,0,-nx,1 end
+  rx,ry,rz=rx/size,ry/size,rz/size
+  local ux,uy,uz=ny*rz-nz*ry,nz*rx-nx*rz,nx*ry-ny*rx
+  local x,y,z=origin[1]+body.dx*radius,origin[2]+body.dy*radius,origin[3]+body.dz*radius
+  local half=radius*SUN_HALF_ANGLE
+  for i=1,6 do
+    local v,s=sunVertices[i],sunSigns[i]
+    v[1],v[2],v[3]=x+half*(rx*s[1]+ux*s[2]),y+half*(ry*s[1]+uy*s[2]),z+half*(rz*s[1]+uz*s[2])
+  end
+  return sunVertices
+end
+
 function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
   local g = hostLove.graphics
   shader = shader or g.newShader(SHADER)
@@ -187,7 +234,8 @@ function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
   local ok, result = pcall(function()
     -- Allocate before binding a shader; texture uploads must not disturb the
     -- pass's first draw or the host's canvas attachment.
-    local sunImage = Disc.image(false)
+    local cleanSun=voxel._gen3CleanSun==true
+    local sunImage = Disc.image(false,cleanSun)
     local moonImage = Disc.image(true)
     g.push("all")
     pushed = true
@@ -197,10 +245,16 @@ function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
     g.setBlendMode("alpha", "alphamultiply")
     g.setMeshCullMode("none")
     local count = 0
-    for _, body in ipairs({ bodies.sun, bodies.moon }) do
+    for i=1,2 do
+      local body
+      if i==1 then body=bodies.sun else body=bodies.moon end
       if body and (body.alpha or 0) > 0.02 then
-        local axisR,axisU = Disc.axes(body)
         local key = body.kind == "moon" and "moon" or "sun"
+        local verts
+        if cleanSun and key=='sun' then
+          verts=cleanSunVertices(body,voxel.eye,radius)
+        else
+        local axisR,axisU = Disc.axes(body)
         local half = (key == "moon" and 10.5 or 22)
           * (1 + (key == "moon" and 0.10 or 0.35)
             * math.max(0, math.min(1, body.dy or 0)))
@@ -213,10 +267,11 @@ function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
             y + half * (axisR[2] * rx + axisU[2] * uy),
             z + half * (axisR[3] * rx + axisU[3] * uy), u, v }
         end
-        local verts = {
+        verts = {
           vertex(-1, 1, 0, 0), vertex(1, 1, 1, 0), vertex(1, -1, 1, 1),
           vertex(-1, 1, 0, 0), vertex(1, -1, 1, 1), vertex(-1, -1, 0, 1),
         }
+        end
         local mesh = meshes[key]
         if not mesh then
           mesh = g.newMesh(FORMAT, verts, "triangles", "stream")
@@ -226,9 +281,18 @@ function Disc.draw(voxel, bodies, _cameraR, _cameraU, radius)
         end
         mesh:setTexture(key == "moon" and moonImage or sunImage)
         shader:send('isMoon',key=='moon')
+        shader:send('cleanSun',cleanSun and key=='sun')
+        shader:send('sunAltitude',body.dy or 0)
         shader:send('moonLight',V.require('QuestMoon').current())
         g.setColor(1, 1, 1, body.alpha)
         g.draw(mesh)
+        if cleanSun and key=='sun' then
+          sunStatus.drawPasses=sunStatus.drawPasses+1
+          sunStatus.dx,sunStatus.dy,sunStatus.dz=body.dx,body.dy,body.dz
+          sunStatus.eyeX,sunStatus.eyeY,sunStatus.eyeZ=voxel.eye[1],voxel.eye[2],voxel.eye[3]
+          sunStatus.coreAngularDeg=math.deg(2*math.atan(SUN_HALF_ANGLE*0.444))
+          sunStatus.haloDeg=4.5
+        end
         count = count + 1
       end
     end
