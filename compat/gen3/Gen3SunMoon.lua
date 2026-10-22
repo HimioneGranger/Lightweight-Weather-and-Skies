@@ -238,4 +238,3 @@ install()
 mod.events:on("mods.loaded", install, 10)
 
 return Gen3SunMoon
-
