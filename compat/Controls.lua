@@ -117,6 +117,10 @@ mod.hooks:wrap("ui.options.rows", function(next, game, rows)
       or id=='BATTLE_ART_QUEST_COMPAT:skyConstellations' then table.remove(out,i) end
   end
   directAtmosphereControls(out, game)
+  if settings.skySourceRow then
+    for i=#out,1,-1 do if out[i].id==mod.id..':skySource' then table.remove(out,i) end end
+    out[#out+1]=settings:skySourceRow()
+  end
   local skyRow = settings:constellationsRow()
   local at = #out + 1
   for i, row in ipairs(out) do

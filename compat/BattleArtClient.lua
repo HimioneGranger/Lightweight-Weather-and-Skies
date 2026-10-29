@@ -2,15 +2,16 @@ local M={}
 -- One raised base deck for every outdoor map; storm shelves retain their motion.
 function M.cloudHeight(mapId)return 1920 end
 local function must(v,e)assert(v,e);return v end
-function M.new(mod,provider,modules,world,host,isSelected)
+function M.new(mod,provider,modules,world,host,isSelected,options)
  if not(provider and provider.capabilities and provider.capabilities.atmosphere_effects_draft==1)then return nil,'atmosphere API unavailable'end
  local self={ready=false,reason='awaiting-first-frame',drawnFrames=0}
- local handle,facade,packets,stars,precip,wp,clouds,celestials,surfaceMap,surface
+ local handle,facade,packets,stars,precip,wp,clouds,celestials,surfaceMap,surface,lastSkyMode
  local function reset()
   self.active=false
   for _,p in ipairs({packets or false,stars or false,precip or false,clouds or false,celestials or false})do if p then p:release()end end
   packets,stars,precip,wp,clouds,celestials,facade=nil,nil,nil,nil,nil,nil,nil
   surfaceMap,surface=nil,nil
+  lastSkyMode=nil
  end
  local function setup(api)
   packets=modules.EffectPackets.new(api,{bolt=world.require('QuestStormBolt'),aurora=world.require('QuestAurora'),rainbow=world.require('QuestRainbow')})
@@ -38,19 +39,26 @@ function M.new(mod,provider,modules,world,host,isSelected)
   if not handle then return end
   local api,err=handle:effects();if not api then self.reason=err;return end
   if facade~=api then reset();facade=api;setup(api)end
-  local scene=world.require('Scene').now or {}
+  local context=options and options.context and options.context(frame)
+  local scene=context and context.scene or world.require('Scene').now or {}
   if not isSelected()or scene.visible~='world'or not scene.outdoor or scene.indoors then api:clear();return end
   local camera=api:camera()
   if not(camera and camera.available)then api:clear();self.ready=false;self.reason='camera-unavailable: '..tostring(camera and camera.reason or 'no-camera-response');return end
   self.cameraMode=camera.mode
   local dt=math.max(0,math.min(.1,tonumber(frame.dt)or 0))
+  local settings=world.require('Settings')
+  local fullSky=not settings.lwsSkyEnabled or settings.lwsSkyEnabled()
+  if lastSkyMode~=nil and lastSkyMode~=fullSky then api:clear() end
+  lastSkyMode=fullSky
   local storm=world.require('QuestStorm');storm.bindCamera(camera)
   local events=world.require('QuestSkyEvents');local after=world.require('QuestAfterStorm')
   local tod=world.require('TimeOfDay');local bodies=world.require('CelestialBodies').bodies(tod.hour)
-  local replace=celestials:draw(bodies,camera.far*.90,world.require('QuestMoon').current())
+  local replace=false
+  if fullSky then replace=celestials:draw(bodies,camera.far*.90,world.require('QuestMoon').current()) end
   local crown,pink,split,time=events.flourish()
   local night,outdoor=events.context()
   packets:bolt(storm.bolt())
+  if fullSky then
   packets:aurora{night=night,outdoor=outdoor,alpha=events.alpha,clock=events.clock,bearing=events.bearing(),flourish={crown,pink,split,time},far=camera.far}
   packets:rainbow{outdoor=true,alpha=after.rainbow,sun=bodies.sun,far=camera.far}
   stars:begin()
@@ -59,9 +67,11 @@ function M.new(mod,provider,modules,world,host,isSelected)
   local ok,problem=pcall(world.require('NightSky').drawWorld,stars:camera(camera),events.clock)
   environment.graphics=previous
   if not ok then error(problem)end
+  end
   local haze=host.require('Sky').haze()
   local tint=storm.tint(host.require('DayNight').tint(true),true,false)
-  local game=require('src.core.Game');local overworld=game.overworld
+  local overworld=context
+  if not overworld then local game=require('src.core.Game');overworld=game.overworld end
   if overworld and overworld.map and overworld.map.id==camera.mapId then
    clouds.clouds.observeMap(overworld.map,overworld.neighbors)
   end
@@ -80,8 +90,12 @@ function M.new(mod,provider,modules,world,host,isSelected)
   must(api:submitAtmosphere{sky={dim=strength*.22,flash=flash,replaceCelestials=replace},
    tint={multiplier=mul,additive={flash*.7,flash*.8,flash}},
    haze={density=(world.require('QuestStormFront').haze or 0)*.00010,color=haze}})
-  local game=require('src.core.Game');local map=game.overworld and game.overworld.map
-  if surfaceMap~=map then surfaceMap=map;wp.invalidate();surface=world.require('QuestRainSurface').sampler(map,host.require('TileShape'))end
+  local map
+  if context then map=context.map else local game=require('src.core.Game');map=game.overworld and game.overworld.map end
+  if surfaceMap~=map then
+   surfaceMap=map;wp.invalidate()
+   surface=context and context.surfaceAt or world.require('QuestRainSurface').sampler(map,host.require('TileShape'))
+  elseif context then surface=context.surfaceAt end
   local weather=world.require('DramalessAtmos').questWeatherFrame({weather={}},world.require('WeatherState').id).weather
   weather.surfaceAt=surface
   precip:begin()

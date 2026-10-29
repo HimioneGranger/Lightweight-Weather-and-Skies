@@ -6,6 +6,8 @@ Moving clouds, changing weather, and a sky worth stopping to look at. Storms tra
 
 Built for **Battle Art on Gen1Recomp**, with Gen2Recomp support in beta. One LWS ZIP routes to PC, standalone Quest, or alpha non-VR Android as appropriate; Battle Art and the Quest bridge are separate installs.
 
+**1.3.0 — Native sky and Renderer API:** Choose FULL LWS SKY (default) or NATIVE SKY to retain your renderer's sky and celestial bodies with LWS clouds, lightning and weather. Renderer authors can use [Renderer API v1](docs/RENDERER_API.md) and the [reference bridge](examples/renderer_api_v1.lua) to integrate without adding their renderer ID to LWS. See [1.3.0 release notes](release-review/RELEASE-1.3.0.md). Source regressions pass; fresh real-backend/headset qualification is still required.
+
 ![Clouds over Kanto](media/clouds-development.jpg)
 
 ## What it adds
@@ -160,6 +162,12 @@ The main options page keeps **WEATHER**, **DAYTIME**, and **LIGHTNING** (FULL/SO
 If weather options or the Showcase tab are missing, report your platform, LWS and Battle Art versions, whether the Quest bridge is installed, and your mod list. Include a short clip. A missing Showcase tab is an LWS/menu-load problem; installing the Android layer on PC is not the fix.
 
 “Lightweight” is the design goal, not a zero-performance-cost promise. Dialogue, map-entry, or area-transition slowdown should be reported separately from visual correctness, with the same mod list and a before/after clip.
+
+## Sky source (1.3.0; fresh headset qualification pending)
+
+**SKY SOURCE → FULL LWS SKY** is the default, including for existing saves with no preference. **NATIVE SKY** keeps the active renderer's own skybox, sun/moon and stars where provided, while retaining **LWS clouds, lightning, precipitation, ground weather and weather visibility fog**. Clouds and lightning still respect their own ON/OFF and accessibility controls. Native mode does not invent celestial bodies absent from the host sky.
+
+The option is available in weather controls and the mod's settings. It can be changed live. LWS stops its separate night-sky colour replacement, celestial overlays and celestial shadow steering in native mode; storm dimming and lightning flashes remain weather effects. Switching back restores full LWS sky. Hosts can query the live `usesNativeSky()` export, and packet hosts receive `replaceCelestials=false` in native mode. Fresh exact-1.3.0 headset and real third-party backend qualification remain pending.
 
 ## Optional cries
 

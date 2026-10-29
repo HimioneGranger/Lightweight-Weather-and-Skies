@@ -9,7 +9,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 archive = Path(sys.argv[1]).resolve()
-baseline = '81ddcb159dd8de999e7e743aa576b25c8246fddc'
+baseline = '5df3b3b702ef68698f675309a3c42f008dd5ef2d' # public v1.2.0
 def git(*args):
     return subprocess.check_output(['git', '-C', str(root), *args]).decode().strip()
 
@@ -26,12 +26,19 @@ with zipfile.ZipFile(archive) as bundle:
         assert bundle.read(name) == path.read_bytes(), 'Source mismatch: '+name
         assert not name.startswith(('tools/', 'tests/', '.git/')), 'Development file included'
     manifest = json.loads(bundle.read('manifest.json'))
-    assert manifest['version'] == '1.1.0'
-    assert manifest['games'] == ['gen1', 'gen2']
+    assert manifest['version'] == '1.3.0'
+    assert manifest['games'] == ['gen1', 'gen2', 'firered', 'leafgreen', 'emerald']
+    assert 'docs/RENDERER_API.md' in expected and 'examples/renderer_api_v1.lua' in expected
+    assert 'release-review/RELEASE-1.3.0.md' in expected
+    assert 'compat/gen3/RseSandstorm.lua' not in expected, 'Unfinished sandstorm experiment included'
 
 runtime = git('diff', '--name-only', baseline, 'HEAD', '--', 'lib', 'compat',
               'bootstrap', 'main.lua', 'weather_main.lua').splitlines()
-assert set(runtime) == {'lib/QuestStorm.lua', 'lib/QuestStormBolt.lua', 'compat/Controls.lua'}, runtime
+assert set(runtime) == {
+    'compat/BattleArtClient.lua','compat/Bootstrap.lua','compat/Controls.lua',
+    'compat/Preferences.lua','compat/Router.lua','compat/RendererAPI.lua',
+    'compat/RendererProvider.lua','lib/DramalessAtmos.lua','lib/Draw.lua',
+    'lib/Settings.lua','main.lua','weather_main.lua'}, runtime
 assert not git('diff', '--name-only', baseline, 'HEAD', '--', 'assets',
                'SOURCE_PROVENANCE.json', 'THIRD_PARTY_NOTICES.md',
                'release-review/AUDIO-SOURCES.json', 'release-review/AUDIO-PROVENANCE.json'), 'Provenance/assets changed'

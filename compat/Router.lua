@@ -17,16 +17,21 @@ function R.select(pipeline,owner,platform,standalone)
   end
   return kind,owner
 end
-function R.new(adapters)
+function R.new(adapters,resolve)
   local self={key=nil,owner=nil,adapter=nil,reason='not-selected'}
   function self:update(pipeline,owner,platform,standalone)
     local key,id=R.select(pipeline,owner,platform,standalone)
-    if key==self.key and id==self.owner then return self.adapter end
+    local token
+    if pipeline and resolve then
+      local custom,selected,revision=resolve(pipeline,owner,platform,standalone)
+      if custom then key,id,token=custom,selected,revision end
+    end
+    if key==self.key and id==self.owner and token==self.token then return self.adapter end
     if self.adapter and self.adapter.detach then self.adapter:detach()end
-    self.adapter=nil;self.key=key;self.owner=id
+    self.adapter=nil;self.key=key;self.owner=id;self.token=token
     local factory=adapters[key]
     if not factory then self.reason=key..'-renderer-unavailable';return nil end
-    local ok,value=pcall(factory,id)
+    local ok,value=pcall(factory,id,token)
     if not ok or type(value)~='table' then self.reason='adapter-load-failed';return nil end
     self.adapter=value;self.reason=value.reason or 'selected'
     return value

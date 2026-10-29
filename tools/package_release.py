@@ -22,8 +22,9 @@ ROOT_FILES = {
     "release-review/AUDIO-SOURCES.json",
     "release-review/AUDIO-PROVENANCE.json",
     "release-review/GEN3-INTEGRATION-1.2.0.md",
+    "release-review/RELEASE-1.3.0.md",
 }
-ROOT_DIRS = ("assets", "bootstrap", "compat", "lib", "media")
+ROOT_DIRS = ("assets", "bootstrap", "compat", "lib", "media", "docs", "examples")
 ZIP_TIME = (2026, 9, 12, 0, 0, 0)
 
 
@@ -80,6 +81,7 @@ def main() -> int:
         "fileCount": len(files),
         "status": "PACKAGE CREATED; EXACT-ARTIFACT AUDIT AND PUBLICATION READBACK REQUIRED",
         "openChecks": [
+            "1.3.0 native-sky and public Renderer API pass source/mock regressions; fresh exact-candidate GPU/stereo/headset and real third-party backend qualification pending",
             "owner reports successful Quest2 testing and approved publication2026-10-22; this is not a benchmark or exhaustive exact-source host qualification",
             "Gen1/2 source regressions are separate from physical headset testing",
             "sun/moon synchronized shadows require matching host-renderer integration, not just this weather ZIP",

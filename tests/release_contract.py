@@ -21,7 +21,10 @@ def require(relative: str, *needles: str) -> None:
 
 
 manifest = json.loads(text("manifest.json"))
-assert manifest["version"] == "1.2.0"
+assert manifest["version"] == "1.3.0"
+require('compat/Bootstrap.lua', 'lwsRendererAPI=public.api')
+require('lib/Settings.lua', 'skySource')
+require('docs/RENDERER_API.md', 'Renderer API v1')
 require("weather_main.lua", 'local ok, bridge = pcall(V.require, "VoxelAtmosBridge")')
 assert "pcall(bridge.init)" not in text("weather_main.lua")
 require("compat/BattleArtClient.lua", "bindCloudCeiling", "atmosphere_effects_draft==1")

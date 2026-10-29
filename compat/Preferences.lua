@@ -1,6 +1,6 @@
 local P = {}
 P.__index = P
-local choices={stormLightning={'full','soft','off'},stormPace={'calm','rare','active'},stormMotion={'moving','static'}}
+local choices={stormLightning={'full','soft','off'},stormPace={'calm','rare','active'},stormMotion={'moving','static'},skySource={'full','native'}}
 function P.new(mod,engine) return setmetatable({mod=mod,engine=engine or require},P) end
 local function optionTable(game)
   if not game then return nil end
@@ -49,6 +49,7 @@ end
 function P:stormPreferences()return {mode=self:read('stormLightning'),pace=self:read('stormPace'),motion=self:read('stormMotion')}end
 -- Adopt natural defaults once per options profile, then respect manual choices.
 function P:applyNaturalDefaults(game,host,world,pipelines)
+  if self:readSkySource()=='native' then return false end
   local opts=optionTable(game)
   local gen2=game and type(game.options)=='table'
   local marker=gen2 and 'lwsGen2NaturalDefaultsV1' or 'lwsNaturalDefaultsV1'
@@ -81,6 +82,16 @@ function P:applyNaturalDefaults(game,host,world,pipelines)
   return true
 end
 function P:readConstellations()return self:read('skyConstellations')end
+function P:readSkySource()return self:read('skySource')end
+function P:skySourceRow()
+  return {id=self.mod.id..':skySource',label='SKY SOURCE',
+    help='Native sky keeps the host skybox and bodies; LWS clouds, lightning and weather remain. Full LWS sky is the default.',
+    value=function()return self:readSkySource()=='native' and 'NATIVE SKY' or 'FULL LWS SKY'end,
+    step=function(g)
+      self:_writeOption('skySource',self:readSkySource()=='native' and 'full' or 'native',g)
+      return true
+    end}
+end
 function P:stormRows()
   local rows={}
   for _,entry in ipairs({{'stormLightning','LIGHTNING'},{'stormPace','STORM PACE'},{'stormMotion','STORM MOTION'}})do
