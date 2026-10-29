@@ -765,6 +765,9 @@ local function installNightSkyWrap()
   pcall(function() NightSky._TOD = TOD end)
   local orig = Sky.paint
   function Sky.paint(w, h, sky, horizonY, cell, body, ...)
+    if Settings.lwsSkyEnabled and not Settings.lwsSkyEnabled() then
+      return orig(w, h, sky, horizonY, cell, body, ...)
+    end
     local wxNight = (TOD and TOD.isNight and TOD.isNight())
         or (TOD and (TOD.pin == "NITE" or TOD.pin == "NIGHT" or TOD.tod == "NITE" or TOD.tod == "NIGHT"))
         or (TOD and type(TOD.hour) == "number" and ((TOD.hour % 24) >= 20 or (TOD.hour % 24) < 5))

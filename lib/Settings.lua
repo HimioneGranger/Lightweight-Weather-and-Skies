@@ -25,6 +25,7 @@ local Settings = {}
 
 local LITE_VISIBLE = {
   worldWeather = true,
+  skySource = true,
   always = true,
   intensity = true,
   speed = true,
@@ -44,6 +45,11 @@ end
 -- Row order is page order.  Choice values are the stored ones; the first
 -- element of each pair is what the row shows.
 Settings.SCHEMA = {
+  {
+    key = "skySource", label = "SKY SOURCE", type = "choice", default = "full",
+    choices = { { "FULL LWS SKY", "full" }, { "NATIVE SKY", "native" } },
+    help = "FULL LWS SKY is the default. NATIVE SKY keeps the renderer's skybox, sun/moon and stars, with LWS clouds, lightning and weather layered over it.",
+  },
   {
     key = "worldWeather", label = "WEATHER", type = "choice", default = "on",
     choices = { { "ON", "on" }, { "OFF", "off" } },
@@ -743,6 +749,19 @@ end
 --- Cloud banks only. OFF does not disable precipitation.
 function Settings.cloudsOn()
   return Settings.get("clouds") ~= "off"
+end
+
+-- Sky ownership is separate from clouds, lightning and the weather master.
+-- Unset/invalid preferences keep the established full LWS presentation.
+function Settings.lwsSkyEnabled()
+  local enabled = Settings.get("skySource") ~= "native"
+  -- Keep legacy host ownership hints in step with the live policy, too.
+  -- Clouds/lightning are deliberately not included in this celestial flag.
+  if mod and mod.exports then
+    mod.exports.directWorldCelestials = enabled
+    mod.exports.celestialRenderer = enabled and "NightSky.drawWorld+CelestialBodies.drawWorld" or "host-native"
+  end
+  return enabled
 end
 
 function Settings.leafColor()

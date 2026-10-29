@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0 — Native sky and Renderer API (2026-10-28)
+
+- Add a saved SKY SOURCE option: FULL LWS SKY remains the default; NATIVE SKY
+  retains the host sky and celestial bodies with LWS clouds, lightning and weather.
+- Restore host sky forwarding and LWS-owned shadow shear on live native-sky
+  switches, without overwriting newer host shadow values.
+- Introduce Renderer API v1: provider registration/discovery, active-renderer
+  routing, copied weather snapshots, camera/world context and scoped draw packets.
+- New renderers can integrate without adding their mod ID to LWS's adapter list.
+  Include an integration guide and executable subscription bridge example.
+- Validate frames/cameras; contain provider faults; handle switching, invalidation
+  and unload; prevent duplicate legacy drawing when a packet renderer owns weather.
+- Automated source tests pass. Real third-party backend, GPU and headset
+  qualification remain pending; no new FPS/performance claim.
+- Retain 1.2.0 weather features. Unfinished Emerald sandstorm experiments, cloud
+  profiling/lab-engine changes, puddles and god rays are excluded from this delta.
+
 ## 1.2.0 — Gen3 support and weather refinement (2026-10-22)
 
 - Rain appearance/downward-motion and bounded geometry/buffer improvements.

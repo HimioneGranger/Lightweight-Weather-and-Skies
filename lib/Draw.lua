@@ -757,6 +757,7 @@ end
 --
 -- Returns true if it drew, which the pipeline's stage handshake needs.
 function Draw.grade(x, y, w, h, indoors)
+  if Settings.lwsSkyEnabled and not Settings.lwsSkyEnabled() then return false end
   if Scene.now.visible=="world" and V.mod.exports.weatherFrameOwned and V.mod.exports.weatherFrameOwned()then return false end
   local mr, mg, mb, ar, ag, ab = TOD.grade(indoors)
   if not mr then return false end

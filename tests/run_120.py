@@ -3,7 +3,7 @@ import argparse, hashlib, json, shutil, subprocess, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-ROOT_TESTS = ['frame_once_120', 'rse_optional_preview_120', 'gen1_stock_host_clouds',
+ROOT_TESTS = ['renderer_api_v1', 'renderer_api_bootstrap', 'native_sky', 'native_sky_packet', 'frame_once_120', 'rse_optional_preview_120', 'gen1_stock_host_clouds',
  'gen2_compat', 'gen2_controls', 'gen2_lightning_profiles', 'gen2_lightning_bolt',
  'gen2_lightning_variety', 'gen2_storm_front', 'gen2_voxel_clouds',
  'gen2_weather_render', 'pc_packet_sky', 'quest_rain_speed']
@@ -23,13 +23,13 @@ def main():
         print(r.stdout+r.stderr,end='')
         if r.returncode: raise RuntimeError('Source test failed: '+str(command))
     run([sys.executable,'tests/release_contract.py'])
-    for name in ROOT_TESTS:
+    for name in ROOT_TESTS + ['renderer_api_example']:
         run([args.luajit,'tests/'+name+'.lua','.'])
     for name in PARTICLE_TESTS:
         run([args.luajit,'tests/'+name+'.lua','lib/voxel_atmos'])
-    for name in ['frame_once_120','rse_optional_preview_120']:
+    for name in ['renderer_api_v1','renderer_api_bootstrap','renderer_api_example','native_sky','native_sky_packet','frame_once_120','rse_optional_preview_120']:
         run([args.luajit,'-joff','tests/'+name+'.lua','.'])
-    files=sorted(p for folder in ['bootstrap','compat','lib','tests']
+    files=sorted(p for folder in ['bootstrap','compat','lib','tests','examples']
                  for p in (ROOT/folder).rglob('*.lua'))
     files += [ROOT/'main.lua', ROOT/'weather_main.lua']
     for start in range(0,len(files),65):

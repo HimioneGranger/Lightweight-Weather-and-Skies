@@ -57,6 +57,7 @@ mod.exports.questLitePrivate = true
 mod.exports.questLiteWorldSpace = true
 mod.exports.directWorldCelestials = true
 mod.exports.celestialRenderer = "NightSky.drawWorld+CelestialBodies.drawWorld"
+pcall(function() mod.exports.lib.require('Settings').lwsSkyEnabled() end)
 mod.exports.compatibilityCelestialRecreation = false
 mod.exports.questLiteScope = {
   "RAIN_LIGHT", "RAIN_HEAVY", "HEAVY_RAIN", "SNOW_LIGHT",

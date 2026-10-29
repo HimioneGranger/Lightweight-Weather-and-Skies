@@ -13,6 +13,27 @@
 
 local V = ...
 local mod = V.mod
+local skySettings = V.require('Settings')
+
+local function fullSky()
+  return not skySettings.lwsSkyEnabled or skySettings.lwsSkyEnabled()
+end
+-- Return shadow ownership on a live switch, without overwriting a host or
+-- another mod that has already supplied newer values since our last write.
+local shearOwnership
+local function writeShear(sm, x, z)
+  local s = shearOwnership
+  if not s or s.sm ~= sm or sm.KX ~= s.lastX or sm.KZ ~= s.lastZ then
+    s = {sm=sm, x=sm.KX, z=sm.KZ}; shearOwnership = s
+  end
+  sm.KX, sm.KZ = x, z
+  s.lastX, s.lastZ = x, z
+end
+local function restoreShear()
+  local s = shearOwnership
+  if s and s.sm.KX == s.lastX and s.sm.KZ == s.lastZ then s.sm.KX, s.sm.KZ = s.x, s.z end
+  shearOwnership = nil
+end
 
 local Atmos = {
   _ready = false,
@@ -287,7 +308,7 @@ local function celestialPass(label, draw)
   return ok, result
 end
 
-local function drawInSceneLegacy(skyOnly, tier)
+local function drawInSceneLegacy(skyOnly, tier, skyEnabled)
   if not Atmos._drawing or not want3d() then return end
   pcall(function()
     local TOD = V.require("TimeOfDay")
@@ -303,7 +324,7 @@ local function drawInSceneLegacy(skyOnly, tier)
 
   -- Align light-shaft shear with the host sun/moon *this frame*.
   -- Cache DayNight/ShadowMap on Atmos so we never hostLib.require per frame.
-  pcall(function()
+  if skyEnabled then pcall(function()
     if not Atmos._DayNight or not Atmos._ShadowMap then
       local hostLib = Atmos._hostLib
       if not hostLib then return end
@@ -337,9 +358,9 @@ local function drawInSceneLegacy(skyOnly, tier)
       kx, kz = DayNight.shearAt(tt)
     end
     if type(kx) == "number" and type(kz) == "number" then
-      ShadowMap.KX, ShadowMap.KZ = kx, kz
+      writeShear(ShadowMap, kx, kz)
     end
-  end)
+  end) end
 
   local map = Atmos._lastMap
   local outdoor = Atmos._lastOutdoor
@@ -355,7 +376,7 @@ local function drawInSceneLegacy(skyOnly, tier)
   -- Quest renders celestial objects before the alpha-blended cloud deck.
   -- Gen2 draws the approved deck directly in its live sky pass.
   -- Interiors must not reach the late celestial fallback when the host skips its sky pass.
-  if tier ~= "off" and outdoor and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
+  if skyEnabled and tier ~= "off" and outdoor and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
   -- Sun/Moon first (day + night): same 3D path as stars, independent of nightVis.
   pcall(function()
     if not Atmos._NightSky then
@@ -615,7 +636,7 @@ local function alignShear()
     shearKX, shearKZ = DayNight.shearAt(tt)
   end
   if type(shearKX) == "number" and type(shearKZ) == "number" then
-    ShadowMap.KX, ShadowMap.KZ = shearKX, shearKZ
+    writeShear(ShadowMap, shearKX, shearKZ)
   end
 end
 
@@ -851,14 +872,14 @@ local function precipBody(Voxel3D, cin, map, outdoor)
   end
 end
 
-local function drawInSceneFast(skyOnly, tier)
+local function drawInSceneFast(skyOnly, tier, skyEnabled)
   if not Atmos._drawing or not want3d() then return end
   pcall(syncNightFromTOD)
   local cin = Atmos._cin
   local Voxel3D = Atmos._Voxel3D
   if not (cin and Voxel3D and Voxel3D.vp) then return end
 
-  pcall(alignShear)
+  if skyEnabled then pcall(alignShear) end
 
   local map = Atmos._lastMap
   local outdoor = Atmos._lastOutdoor
@@ -871,7 +892,7 @@ local function drawInSceneFast(skyOnly, tier)
   local okC, c1, c2, c3, c4 = pcall(love.graphics.getColor)
   if okC then pr, pg, pb, pa = c1, c2, c3, c4 end
 
-  if tier ~= "off" and outdoor
+  if skyEnabled and tier ~= "off" and outdoor
       and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
     pcall(sunMoonProbe, Voxel3D)
     if V.questLitePrivate then
@@ -992,7 +1013,7 @@ local function computeShearOnce()
     shearKX, shearKZ = DayNight.shearAt(tt)
   end
   if type(shearKX) == "number" and type(shearKZ) == "number" then
-    ShadowMap.KX, ShadowMap.KZ = shearKX, shearKZ
+    writeShear(ShadowMap, shearKX, shearKZ)
     c.sm, c.kx, c.kz, c.stable = ShadowMap, shearKX, shearKZ, viaBodies
   end
 end
@@ -1005,7 +1026,7 @@ local function applyShearOnce()
   end
   if c.stable then
     local sm = c.sm
-    sm.KX, sm.KZ = c.kx, c.kz
+    writeShear(sm, c.kx, c.kz)
   else
     pcall(alignShear)
   end
@@ -1035,20 +1056,20 @@ local function sunMoonPassOnce(Voxel3D)
   pcall(love.graphics.setDepthMode, "lequal", true)
 end
 
-local function drawInSceneOnce(skyOnly, tier)
+local function drawInSceneOnce(skyOnly, tier, skyEnabled)
   if not Atmos._drawing or not want3d() then return end
   applyNightOnce()
   local cin = Atmos._cin
   local Voxel3D = Atmos._Voxel3D
   if not (cin and Voxel3D and Voxel3D.vp) then return end
 
-  applyShearOnce()
+  if skyEnabled then applyShearOnce() end
 
   local map = Atmos._lastMap
   local outdoor = Atmos._lastOutdoor
   if outdoor == nil then outdoor = true end
 
-  if tier ~= "off" and outdoor
+  if skyEnabled and tier ~= "off" and outdoor
       and (not V.questLitePrivate or skyOnly or not Atmos._skyDrawnThisScene) then
     if not (V.questLitePrivate and Atmos._NightSky) then pcall(sunMoonProbe, Voxel3D) end
     if V.questLitePrivate then
@@ -1086,12 +1107,15 @@ local function drawInSceneOnce(skyOnly, tier)
 end
 
 local function drawInScene(skyOnly)
+  if mod.exports.ownedWeatherAdapter then return end
+  local skyEnabled = fullSky()
+  if not skyEnabled then restoreShear() end
   local tier = perfCache.tier
   if perfCache.hoist then
-    if perfCache.frameOnce == true then return drawInSceneOnce(skyOnly, tier) end
-    return drawInSceneFast(skyOnly, tier)
+    if perfCache.frameOnce == true then return drawInSceneOnce(skyOnly, tier, skyEnabled) end
+    return drawInSceneFast(skyOnly, tier, skyEnabled)
   end
-  return drawInSceneLegacy(skyOnly, tier)
+  return drawInSceneLegacy(skyOnly, tier, skyEnabled)
 end
 
 -- Gen 2 Quest owns its visible background through QuestSky, and its stereo
@@ -1289,6 +1313,7 @@ function Atmos.install()
       local origPaint = Sky.paint
       -- Gen2 Sky.paint may pass extra args (top, axis, ray); always forward them.
       function Sky.paint(w, h, sky, horizonY, cell, body, ...)
+        if not fullSky() then return origPaint(w, h, sky, horizonY, cell, body, ...) end
         local skyArg = sky
         if NightSky and sky and sky.bands and Atmos._cin and Atmos._cin.skyWeather then
           local ok, info = pcall(Atmos._cin.skyWeather)
@@ -1351,7 +1376,7 @@ function Atmos.install()
         and not Atmos._gen1CloudWrapped then
       local originalDraw = hostClouds.draw
       hostClouds.draw = function(eye)
-        if not Atmos._drawing then return originalDraw(eye) end
+        if not Atmos._drawing or mod.exports.ownedWeatherAdapter then return originalDraw(eye) end
         local ok, result = pcall(function()
           if not Atmos._gen2CloudDeck then
             Atmos._gen2CloudDeck = V.require("Gen2VoxelClouds").new(
@@ -1373,11 +1398,11 @@ function Atmos.install()
       local originalPaint, originalDisc = hostSky.paint, hostSky.discImage
       if type(originalPaint) == "function" and type(originalDisc) == "function" then
         hostSky.paint = function(w, h, sky, horizonY, cell, body, ...)
-          if Atmos._drawing and want3d() then body = nil end
+          if not mod.exports.ownedWeatherAdapter and fullSky() and Atmos._drawing and want3d() then body = nil end
           return originalPaint(w, h, sky, horizonY, cell, body, ...)
         end
         hostSky.discImage = function(...)
-          if Atmos._drawing and want3d() then return nil end
+          if not mod.exports.ownedWeatherAdapter and fullSky() and Atmos._drawing and want3d() then return nil end
           return originalDisc(...)
         end
         Atmos._gen1BodyWrapped = true
@@ -1439,7 +1464,7 @@ function Atmos.install()
 end
 
 function Atmos.active()
-  return Atmos._active and Atmos._drawing
+  return not mod.exports.ownedWeatherAdapter and Atmos._active and Atmos._drawing
 end
 
 function Atmos.reason()
@@ -1553,6 +1578,7 @@ function Atmos.syncFromWeatherFx(state)
 end
 
 function Atmos.update(dt, last)
+  if mod.exports.ownedWeatherAdapter or not fullSky() then restoreShear() end
   Atmos._updateSerial = (Atmos._updateSerial or 0) + 1
   -- `last` (Lab 52 frame-once): the final tick's dt of a batched update; the per-frame precipitation step keeps using it
   Atmos._updateDelta = math.max(0, math.min(0.1, tonumber(last == nil and dt or last) or 0))
